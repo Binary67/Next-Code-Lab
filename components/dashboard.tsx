@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { saveExperiments } from "@/app/actions";
 import ExperimentCard from "@/components/experiment-card";
 import {
-  experiments as seed,
   type EvaluationMode,
   type EvaluationStatus,
   type Experiment,
@@ -346,7 +346,7 @@ function DeleteModal({
             Delete experiment?
           </h2>
           <p className="mt-1 text-sm leading-relaxed text-zinc-500">
-            Remove this experiment from the current demo session.
+            Remove this experiment from local storage.
           </p>
         </div>
         <button
@@ -424,32 +424,75 @@ function statusLabel(status: Status | ExperimentTrial["status"]) {
   return status;
 }
 
+function EmptyState({
+  title,
+  body,
+}: {
+  title: string;
+  body?: string;
+}) {
+  return (
+    <div className="rounded-2xl bg-zinc-50/70 px-4 py-8 text-center ring-1 ring-zinc-950/5">
+      <p className="text-sm font-medium text-zinc-900">{title}</p>
+      {body && <p className="mt-1 text-sm text-zinc-500">{body}</p>}
+    </div>
+  );
+}
+
+function ComingSoonPanel({ title }: { title: string }) {
+  return (
+    <section className="relative overflow-hidden rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
+      <div className="pointer-events-none select-none space-y-3 opacity-50 blur-[1.5px]">
+        <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+          {title}
+        </p>
+        <div className="space-y-2">
+          <div className="h-3 w-3/4 rounded-full bg-zinc-200" />
+          <div className="h-3 w-1/2 rounded-full bg-zinc-200" />
+          <div className="h-3 w-2/3 rounded-full bg-zinc-200" />
+        </div>
+      </div>
+      <div className="absolute inset-0 flex items-center justify-center bg-white/45">
+        <span className="rounded-full bg-zinc-900 px-3 py-1 text-xs font-medium text-white shadow-sm">
+          Coming soon
+        </span>
+      </div>
+    </section>
+  );
+}
+
 function MetricsList({ metrics }: { metrics: ExperimentMetric[] }) {
   return (
     <section>
       <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
         Metrics
       </h2>
-      <div className="mt-3 divide-y divide-zinc-200/70 overflow-hidden rounded-2xl bg-white/55 ring-1 ring-zinc-950/5">
-        {metrics.map((metric) => (
-          <div
-            key={metric.label}
-            className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3"
-          >
-            <div className="min-w-0">
-              <p className="text-xs font-medium text-zinc-500">
-                {metric.label}
-              </p>
-              <p className="mt-0.5 truncate text-xs text-zinc-400">
-                {metric.detail}
+      {metrics.length === 0 ? (
+        <div className="mt-3">
+          <EmptyState title="Metrics will appear after the first trial completes." />
+        </div>
+      ) : (
+        <div className="mt-3 divide-y divide-zinc-200/70 overflow-hidden rounded-2xl bg-white/55 ring-1 ring-zinc-950/5">
+          {metrics.map((metric) => (
+            <div
+              key={metric.label}
+              className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3"
+            >
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-zinc-500">
+                  {metric.label}
+                </p>
+                <p className="mt-0.5 truncate text-xs text-zinc-400">
+                  {metric.detail}
+                </p>
+              </div>
+              <p className="text-right text-base font-semibold tracking-tight text-zinc-900">
+                {metric.value}
               </p>
             </div>
-            <p className="text-right text-base font-semibold tracking-tight text-zinc-900">
-              {metric.value}
-            </p>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -583,56 +626,59 @@ function TrialsList({
         Latest attempts and measured outcomes.
       </p>
 
-      <div className="mt-3 divide-y divide-zinc-200/70 overflow-hidden rounded-2xl bg-white/55 ring-1 ring-zinc-950/5">
-        {trials.map((trial) => (
-          <article
-            key={trial.id}
-            className="px-4 py-3"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="font-mono text-xs font-semibold text-zinc-900">
-                    {trial.id}
-                  </p>
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ring-1 ring-inset ring-black/5 ${
-                      TRIAL_TONE[trial.status]
-                    }`}
-                  >
-                    {statusLabel(trial.status)}
-                  </span>
+      {trials.length === 0 ? (
+        <div className="mt-3">
+          <EmptyState title="No trials yet." />
+        </div>
+      ) : (
+        <div className="mt-3 divide-y divide-zinc-200/70 overflow-hidden rounded-2xl bg-white/55 ring-1 ring-zinc-950/5">
+          {trials.map((trial) => (
+            <article key={trial.id} className="px-4 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-mono text-xs font-semibold text-zinc-900">
+                      {trial.id}
+                    </p>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ring-1 ring-inset ring-black/5 ${
+                        TRIAL_TONE[trial.status]
+                      }`}
+                    >
+                      {statusLabel(trial.status)}
+                    </span>
+                  </div>
+                  <h3 className="mt-2 truncate text-sm font-medium text-zinc-900">
+                    {trial.title}
+                  </h3>
                 </div>
-                <h3 className="mt-2 truncate text-sm font-medium text-zinc-900">
-                  {trial.title}
-                </h3>
+                <div className="shrink-0 text-right">
+                  <p className="text-xs text-zinc-400">{metricName}</p>
+                  <p className="mt-0.5 text-sm font-semibold text-zinc-900">
+                    {trial.metricValue}
+                  </p>
+                </div>
               </div>
-              <div className="shrink-0 text-right">
-                <p className="text-xs text-zinc-400">{metricName}</p>
-                <p className="mt-0.5 text-sm font-semibold text-zinc-900">
-                  {trial.metricValue}
-                </p>
-              </div>
-            </div>
-            <p className="mt-2 text-sm leading-relaxed text-zinc-500">
-              {trial.summary}
-            </p>
-            <p className="mt-2 text-xs text-zinc-400">{trial.duration}</p>
-          </article>
-        ))}
-      </div>
+              <p className="mt-2 text-sm leading-relaxed text-zinc-500">
+                {trial.summary}
+              </p>
+              <p className="mt-2 text-xs text-zinc-400">{trial.duration}</p>
+            </article>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
 
 function DetailStatusStrip({ experiment }: { experiment: Experiment }) {
-  const latestTrial = experiment.trials[0];
+  const latestTrial: ExperimentTrial | undefined = experiment.trials[0];
   const trials = experiment.metrics.find((metric) => metric.label === "Trials");
   const spend = experiment.metrics.find((metric) => metric.label === "Spend");
   const evaluation = experiment.evaluation;
   const statusDetail = experiment.pendingQuestion
     ? "User input required"
-    : experiment.timing ?? latestTrial.duration;
+    : experiment.timing ?? latestTrial?.duration ?? "Not started";
   const items = [
     {
       label: "State",
@@ -651,23 +697,27 @@ function DetailStatusStrip({ experiment }: { experiment: Experiment }) {
     },
     {
       label: "Score",
-      value: evaluation.scoreName || experiment.targetLabel,
+      value:
+        evaluation.status === "ready" ? evaluation.scoreName || "score" : "Not set",
       detail: directionLabel(evaluation.scoreDirection),
     },
     {
       label: "Latest trial",
-      value: latestTrial.id,
-      detail: latestTrial.metricValue,
+      value: latestTrial?.id ?? "None",
+      detail: latestTrial?.metricValue ?? "not measured",
     },
     {
       label: "Elapsed",
-      value: trials?.detail.replace(" elapsed", "") ?? latestTrial.duration,
+      value:
+        trials?.detail.replace(" elapsed", "") ??
+        latestTrial?.duration ??
+        "Not started",
       detail: `${trials?.value ?? experiment.trials.length} trials`,
     },
     {
       label: "Spend",
-      value: spend?.value ?? "$0.00",
-      detail: spend?.detail ?? "not tracked",
+      value: spend?.value ?? "Coming soon",
+      detail: spend?.detail ?? "not calculated",
     },
   ];
 
@@ -800,12 +850,15 @@ function OverviewPanel({
   metricName: string;
   onNotify: (message: string) => void;
 }) {
-  const latestPoint = experiment.trend[experiment.trend.length - 1];
-  const previousPoint = experiment.trend[experiment.trend.length - 2];
+  const latestPoint: TrendPoint | undefined =
+    experiment.trend[experiment.trend.length - 1];
+  const previousPoint: TrendPoint | undefined =
+    experiment.trend[experiment.trend.length - 2];
   const movement =
     latestPoint && previousPoint ? latestPoint.value - previousPoint.value : 0;
   const movementUnit = experiment.metricValue.includes("ms") ? "ms" : "";
-  const activeTrial = experiment.trials[0];
+  const activeTrial: ExperimentTrial | undefined = experiment.trials[0];
+  const hasTrend = experiment.trend.length > 0;
 
   return (
     <section className="grid gap-5 xl:grid-cols-[1.45fr_0.85fr]">
@@ -820,75 +873,100 @@ function OverviewPanel({
                 Trend direction and latest trial state.
               </p>
             </div>
-            <div className="rounded-2xl bg-blue-50/80 px-3 py-2 text-right ring-1 ring-blue-100">
-              <p className="text-xs font-medium text-blue-700">
-                Current {experiment.metricValue}
-              </p>
-              <p
-                className={`mt-0.5 text-xs ${
-                  movement > 0 ? "text-amber-600" : "text-emerald-600"
-                }`}
-              >
-                {movement > 0 ? "+" : ""}
-                {movement}
-                {movementUnit} from previous
-              </p>
-            </div>
+            {hasTrend && (
+              <div className="rounded-2xl bg-blue-50/80 px-3 py-2 text-right ring-1 ring-blue-100">
+                <p className="text-xs font-medium text-blue-700">
+                  Current {experiment.metricValue}
+                </p>
+                <p
+                  className={`mt-0.5 text-xs ${
+                    movement > 0 ? "text-amber-600" : "text-emerald-600"
+                  }`}
+                >
+                  {movement > 0 ? "+" : ""}
+                  {movement}
+                  {movementUnit} from previous
+                </p>
+              </div>
+            )}
           </div>
-          <TrendChart
-            points={experiment.trend}
-            target={experiment.targetMetric}
-            targetLabel={`${experiment.targetLabel}: ${experiment.targetValue}`}
-          />
+          {hasTrend ? (
+            <TrendChart
+              points={experiment.trend}
+              target={experiment.targetMetric}
+              targetLabel={`${experiment.targetLabel}: ${experiment.targetValue}`}
+            />
+          ) : (
+            <div className="mt-4">
+              <EmptyState title="Trend appears after the first trial completes." />
+            </div>
+          )}
         </section>
 
         <div className="grid gap-3 lg:grid-cols-2">
           <section className="rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
             <h3 className="text-sm font-semibold text-zinc-900">Active run</h3>
-            <div className="mt-3 flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="font-mono text-xs font-semibold text-zinc-900">
-                  {activeTrial.id}
+            {activeTrial ? (
+              <>
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-mono text-xs font-semibold text-zinc-900">
+                      {activeTrial.id}
+                    </p>
+                    <p className="mt-1 truncate text-sm font-medium text-zinc-900">
+                      {activeTrial.title}
+                    </p>
+                  </div>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ring-1 ring-inset ring-black/5 ${
+                      TRIAL_TONE[activeTrial.status]
+                    }`}
+                  >
+                    {statusLabel(activeTrial.status)}
+                  </span>
+                </div>
+                <p className="mt-3 text-sm leading-relaxed text-zinc-500">
+                  {activeTrial.summary}
                 </p>
-                <p className="mt-1 truncate text-sm font-medium text-zinc-900">
-                  {activeTrial.title}
-                </p>
+              </>
+            ) : (
+              <div className="mt-3">
+                <EmptyState
+                  title="No active run yet."
+                  body="Start the experiment after evaluation setup to create the first trial."
+                />
               </div>
-              <span
-                className={`rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ring-1 ring-inset ring-black/5 ${
-                  TRIAL_TONE[activeTrial.status]
-                }`}
-              >
-                {statusLabel(activeTrial.status)}
-              </span>
-            </div>
-            <p className="mt-3 text-sm leading-relaxed text-zinc-500">
-              {activeTrial.summary}
-            </p>
+            )}
           </section>
 
           <section className="rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
             <h3 className="text-sm font-semibold text-zinc-900">Measurement</h3>
-            <div className="mt-3 divide-y divide-zinc-200/70 text-sm">
-              <div className="flex items-center justify-between gap-3 py-2 first:pt-0">
-                <span className="text-zinc-500">{metricName}</span>
-                <span className="font-semibold text-zinc-900">
-                  {activeTrial.metricValue}
-                </span>
+            {activeTrial ? (
+              <div className="mt-3 divide-y divide-zinc-200/70 text-sm">
+                <div className="flex items-center justify-between gap-3 py-2 first:pt-0">
+                  <span className="text-zinc-500">{metricName}</span>
+                  <span className="font-semibold text-zinc-900">
+                    {activeTrial.metricValue}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3 py-2">
+                  <span className="text-zinc-500">{experiment.targetLabel}</span>
+                  <span className="font-semibold text-zinc-900">
+                    {experiment.targetValue}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3 py-2 last:pb-0">
+                  <span className="text-zinc-500">Duration</span>
+                  <span className="font-semibold text-zinc-900">
+                    {activeTrial.duration}
+                  </span>
+                </div>
               </div>
-              <div className="flex items-center justify-between gap-3 py-2">
-                <span className="text-zinc-500">{experiment.targetLabel}</span>
-                <span className="font-semibold text-zinc-900">
-                  {experiment.targetValue}
-                </span>
+            ) : (
+              <div className="mt-3">
+                <EmptyState title="Measurements will appear after a trial records a score." />
               </div>
-              <div className="flex items-center justify-between gap-3 py-2 last:pb-0">
-                <span className="text-zinc-500">Duration</span>
-                <span className="font-semibold text-zinc-900">
-                  {activeTrial.duration}
-                </span>
-              </div>
-            </div>
+            )}
           </section>
         </div>
       </div>
@@ -919,6 +997,8 @@ function OverviewPanel({
         </section>
 
         <MetricsList metrics={experiment.metrics} />
+
+        <ComingSoonPanel title="Guardrails and spend" />
       </aside>
     </section>
   );
@@ -1302,6 +1382,10 @@ function EvaluationPanel({
 }
 
 function ProgressPanel({ steps }: { steps: ProgressStep[] }) {
+  if (steps.length === 0) {
+    return <EmptyState title="Progress will appear after setup starts." />;
+  }
+
   const current =
     steps.find((step) => step.status === "blocked") ??
     steps.find((step) => step.status === "active") ??
@@ -1401,54 +1485,40 @@ function ChangesPanel({ changes }: { changes: ExperimentChange[] }) {
           Files, patches, and validation state for this experiment.
         </p>
 
-        <div className="mt-5 divide-y divide-zinc-200/70">
-          {changes.map((change) => (
-            <article key={change.id} className="py-4 first:pt-0">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="truncate font-mono text-xs font-medium text-zinc-500">
-                    {change.path}
-                  </p>
-                  <h3 className="mt-2 text-sm font-semibold text-zinc-900">
-                    {change.summary}
-                  </h3>
+        {changes.length === 0 ? (
+          <div className="mt-5">
+            <EmptyState title="No changes recorded yet." />
+          </div>
+        ) : (
+          <div className="mt-5 divide-y divide-zinc-200/70">
+            {changes.map((change) => (
+              <article key={change.id} className="py-4 first:pt-0">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate font-mono text-xs font-medium text-zinc-500">
+                      {change.path}
+                    </p>
+                    <h3 className="mt-2 text-sm font-semibold text-zinc-900">
+                      {change.summary}
+                    </h3>
+                  </div>
+                  <span
+                    className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ring-1 ring-inset ${
+                      CHANGE_TONE[change.status]
+                    }`}
+                  >
+                    {change.status}
+                  </span>
                 </div>
-                <span
-                  className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ring-1 ring-inset ${
-                    CHANGE_TONE[change.status]
-                  }`}
-                >
-                  {change.status}
-                </span>
-              </div>
-            </article>
-          ))}
-        </div>
+              </article>
+            ))}
+          </div>
+        )}
       </section>
 
       <aside className="space-y-5">
-        <section className="rounded-2xl bg-zinc-50/70 p-4 ring-1 ring-zinc-950/5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-            Validation
-          </p>
-          <h3 className="mt-3 text-base font-semibold text-zinc-900">
-            Static checks queued
-          </h3>
-          <p className="mt-2 text-sm leading-relaxed text-zinc-500">
-            Fast validation can run after the selected compression path is applied.
-          </p>
-        </section>
-
-        <section className="rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-            Review focus
-          </p>
-          <ul className="mt-3 space-y-2 text-sm text-zinc-500">
-            <li>Latency improvement against target p95.</li>
-            <li>Error rate and memory pressure guardrails.</li>
-            <li>Compression default impact on large JSON responses.</li>
-          </ul>
-        </section>
+        <ComingSoonPanel title="Validation summary" />
+        <ComingSoonPanel title="Review focus" />
       </aside>
     </section>
   );
@@ -1464,8 +1534,11 @@ function AgentCollab({
   onSendReply: (experiment: Experiment, text: string) => void;
 }) {
   const [reply, setReply] = useState("");
+  const canReply = experiment.status !== "setup";
 
   const addReply = (text: string) => {
+    if (!canReply) return;
+
     const trimmed = text.trim();
     if (!trimmed) return;
 
@@ -1488,6 +1561,10 @@ function AgentCollab({
       </header>
 
       <div className="flex-1 space-y-4 overflow-y-auto px-4 py-5">
+        {experiment.agentMessages.length === 0 && !experiment.pendingQuestion && (
+          <EmptyState title="Runtime collaboration starts after the experiment starts." />
+        )}
+
         {experiment.agentMessages.map((message) => {
           const fromUser = message.author === "user";
           return (
@@ -1558,14 +1635,21 @@ function AgentCollab({
             }
           }}
           rows={3}
-          placeholder="Reply to agent..."
+          disabled={!canReply}
+          placeholder={
+            canReply
+              ? "Reply to agent..."
+              : "Start the experiment before using runtime collab."
+          }
           className={`${inputClass} resize-none`}
         />
         <div className="mt-2 flex items-center justify-between">
-          <p className="text-xs text-zinc-400">Press Enter to send</p>
+          <p className="text-xs text-zinc-400">
+            {canReply ? "Press Enter to send" : "Runtime collab is locked during setup"}
+          </p>
           <button
             type="submit"
-            disabled={!reply.trim()}
+            disabled={!canReply || !reply.trim()}
             className="rounded-xl bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Send
@@ -1811,22 +1895,41 @@ function Placeholder({
   );
 }
 
-export default function Dashboard() {
-  const [items, setItems] = useState<Experiment[]>(seed);
+export default function Dashboard({
+  initialExperiments,
+}: {
+  initialExperiments: Experiment[];
+}) {
+  const [items, setItems] = useState<Experiment[]>(initialExperiments);
   const [tab, setTab] = useState<TabId>("all");
   const [nav, setNav] = useState<NavId>("experiments");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [deleteFor, setDeleteFor] = useState<Experiment | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const didMountRef = useRef(false);
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
 
-  const notify = (message: string) => {
+  const notify = useCallback((message: string) => {
     setToast(message);
     window.setTimeout(
       () => setToast((current) => (current === message ? null : current)),
       2600,
     );
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
+    }
+
+    const snapshot = items;
+    saveQueueRef.current = saveQueueRef.current
+      .catch(() => undefined)
+      .then(() => saveExperiments(snapshot))
+      .catch(() => notify("Could not save experiments"));
+  }, [items, notify]);
 
   const needsInputCount = items.filter((e) => e.status === "needs-input").length;
   const visible = tab === "all" ? items : items.filter((e) => e.status === tab);
@@ -1842,12 +1945,11 @@ export default function Dashboard() {
       draft.description.trim() ||
       "Evaluation setup required before optimization can start.";
     const base = {
-      id: `${slugify(title)}-${items.length}`,
+      id: `${slugify(title)}-${Date.now()}`,
       repo: draft.repo.trim(),
       title,
       description: context,
     };
-    const progress = "Not started";
     const detail = {
       objective: context,
       targetLabel: "Direction",
@@ -1858,29 +1960,13 @@ export default function Dashboard() {
         scriptPath: "",
         scoreDirection: "minimize",
         runCommand: "",
-        scoreName: "score",
+        scoreName: "",
         status: "missing",
         messages: [],
       },
-      metrics: [
-        { label: "Evaluation", value: "Needed", detail: "setup required" },
-        { label: "Score", value: "-", detail: "not measured" },
-        { label: "Best trial", value: "-", detail: "not started" },
-        { label: "Error rate", value: "-", detail: "not measured" },
-        { label: "Trials", value: "0", detail: "not started" },
-        { label: "Spend", value: "$0.00", detail: "0 tokens" },
-      ],
-      trend: [{ label: "Setup", value: 0 }],
-      trials: [
-        {
-          id: "Setup",
-          title: "Evaluation setup",
-          summary: "Provide an eval script contract before starting the run.",
-          metricValue: progress,
-          duration: "Just now",
-          status: "setup",
-        },
-      ],
+      metrics: [],
+      trend: [],
+      trials: [],
       progressSteps: [
         {
           id: "evaluation-setup",
@@ -1897,22 +1983,8 @@ export default function Dashboard() {
           time: "Next",
         },
       ],
-      changes: [
-        {
-          id: "initial-workspace",
-          path: base.repo,
-          summary: "Experiment workspace waiting for evaluation setup.",
-          status: "planned",
-        },
-      ],
-      agentMessages: [
-        {
-          id: "created-message",
-          author: "agent",
-          text: "Workspace created. Runtime collaboration will start after the evaluation contract is ready.",
-          time: "Just now",
-        },
-      ],
+      changes: [],
+      agentMessages: [],
     } satisfies Pick<
       Experiment,
       | "objective"
@@ -2150,18 +2222,7 @@ export default function Dashboard() {
           targetLabel: "Direction",
           targetValue: direction,
           evaluation,
-          metrics: [
-            {
-              label: metricLabel,
-              value: "baseline pending",
-              detail: "first eval queued",
-            },
-            { label: "Direction", value: direction, detail: "score objective" },
-            { label: "Best trial", value: "-", detail: "not measured" },
-            { label: "Error rate", value: "-", detail: "not measured" },
-            { label: "Trials", value: "1", detail: "just started" },
-            { label: "Spend", value: "$0.00", detail: "0 tokens" },
-          ],
+          metrics: [],
           trials: [
             {
               id: "T-01",
