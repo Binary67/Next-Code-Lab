@@ -101,6 +101,7 @@ export default function Dashboard({
   } | null>(null);
   const [runPendingId, setRunPendingId] = useState<string | null>(null);
   const didMountRef = useRef(false);
+  const skipNextSaveRef = useRef(false);
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   const notify = useCallback((message: string) => {
@@ -117,6 +118,11 @@ export default function Dashboard({
       return;
     }
 
+    if (skipNextSaveRef.current) {
+      skipNextSaveRef.current = false;
+      return;
+    }
+
     const snapshot = items;
     saveQueueRef.current = saveQueueRef.current
       .catch(() => undefined)
@@ -127,10 +133,57 @@ export default function Dashboard({
   const needsInputCount = items.filter((e) => e.status === "needs-input").length;
   const visible = tab === "all" ? items : items.filter((e) => e.status === tab);
   const selected = items.find((experiment) => experiment.id === selectedId);
+  const shouldPollExperiments =
+    runPendingId !== null || items.some((experiment) => experiment.status === "running");
   const selectedEvalSetupPendingAction =
     selected && evalSetupPending?.experimentId === selected.id
       ? evalSetupPending.action
       : undefined;
+
+  useEffect(() => {
+    if (!shouldPollExperiments) {
+      return;
+    }
+
+    let stopped = false;
+
+    const poll = async () => {
+      try {
+        const response = await fetch("/api/experiments", { cache: "no-store" });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const data = (await response.json()) as { experiments?: Experiment[] };
+
+        const experiments = data.experiments;
+
+        if (!Array.isArray(experiments) || stopped) {
+          return;
+        }
+
+        setItems((current) => {
+          if (JSON.stringify(current) === JSON.stringify(experiments)) {
+            return current;
+          }
+
+          skipNextSaveRef.current = true;
+          return experiments;
+        });
+      } catch {
+        // Polling is best-effort; the active server action still returns final state.
+      }
+    };
+
+    void poll();
+    const interval = window.setInterval(() => void poll(), 1000);
+
+    return () => {
+      stopped = true;
+      window.clearInterval(interval);
+    };
+  }, [shouldPollExperiments]);
 
   const handleCreate = (draft: ExperimentDraft) => {
     const experiment = createExperimentFromDraft(draft);

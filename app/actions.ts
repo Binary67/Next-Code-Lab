@@ -14,6 +14,7 @@ import { writeGeneratedEvalScript } from "@/lib/eval-artifacts";
 import { writeExperiments } from "@/lib/experiment-store";
 import { ExperimentOrchestrator } from "@/lib/experiment-orchestrator";
 import type { Experiment } from "@/lib/experiments";
+import { deleteExperimentTrialLogs } from "@/lib/trial-log-store";
 
 type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -253,6 +254,7 @@ export async function deleteExperiment(
       recursive: true,
       force: true,
     });
+    await deleteExperimentTrialLogs(experimentId);
     await writeExperiments(
       input.remainingExperiments.filter(
         (experiment) => experiment.id !== experimentId,

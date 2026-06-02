@@ -36,6 +36,10 @@ export type ExperimentTrial = {
   improved?: boolean;
   startedAt?: string;
   completedAt?: string;
+  log?: {
+    path: string;
+    updatedAt?: string;
+  };
 };
 
 export type TrendPoint = {

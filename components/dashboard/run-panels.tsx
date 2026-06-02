@@ -1,19 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { readTrialDiff } from "@/app/actions";
 import type {
   Experiment,
   ExperimentTrial,
-  ProgressStep,
 } from "@/lib/experiments";
 import {
-  ArrowDownIcon,
   Avatar,
   FlaskIcon,
   WarningIcon,
 } from "@/components/icons";
 import {
   EmptyState,
-  PROGRESS_TONE,
   TRIAL_TONE,
   inputClass,
   statusLabel,
@@ -41,6 +38,17 @@ type TrialDiffState =
   | { status: "loaded"; key: string; data: TrialDiff }
   | { status: "empty"; message: string }
   | { status: "error"; key: string; message: string };
+
+type TrialLogState =
+  | { status: "idle" }
+  | { status: "loading"; trialId: string }
+  | {
+      status: "loaded";
+      trialId: string;
+      markdown: string;
+      updatedAt?: string;
+    }
+  | { status: "error"; trialId: string; message: string };
 
 function formatScoreValue(value: number) {
   return Number.isInteger(value)
@@ -187,102 +195,6 @@ function DiffContent({ state }: { state: TrialDiffState }) {
   );
 }
 
-function RunProgressSteps({ steps }: { steps: ProgressStep[] }) {
-  if (steps.length === 0) {
-    return <EmptyState title="Progress will appear after setup starts." />;
-  }
-
-  const current =
-    steps.find((step) => step.status === "blocked") ??
-    steps.find((step) => step.status === "active") ??
-    steps[0];
-  const queued = steps.filter((step) => step.status === "queued");
-
-  return (
-    <section className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
-      <section className="rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
-        <h2 className="text-base font-semibold tracking-tight text-zinc-900">
-          Run progress
-        </h2>
-        <p className="mt-1 text-sm text-zinc-500">
-          Current step, recent work, and queued actions.
-        </p>
-
-        <div className="mt-5 divide-y divide-zinc-200/70">
-          {steps.map((step) => (
-            <article
-              key={step.id}
-              className="grid gap-3 py-4 first:pt-0 sm:grid-cols-[8rem_1fr]"
-            >
-              <div className="flex items-center gap-2 sm:block">
-                <p className="font-mono text-xs text-zinc-400">{step.time}</p>
-                <span
-                  className={`mt-0 inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ring-1 ring-inset sm:mt-2 ${
-                    PROGRESS_TONE[step.status]
-                  }`}
-                >
-                  {step.status}
-                </span>
-              </div>
-              <div>
-                <h3 className="text-sm font-semibold text-zinc-900">
-                  {step.title}
-                </h3>
-                <p className="mt-1 text-sm leading-relaxed text-zinc-500">
-                  {step.detail}
-                </p>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <aside className="space-y-5">
-        <section className="rounded-2xl bg-zinc-50/70 p-4 ring-1 ring-zinc-950/5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-            Current focus
-          </p>
-          <h3 className="mt-3 text-base font-semibold text-zinc-900">
-            {current.title}
-          </h3>
-          <p className="mt-2 text-sm leading-relaxed text-zinc-500">
-            {current.detail}
-          </p>
-          <span
-            className={`mt-4 inline-flex rounded-full px-2.5 py-1 text-xs font-medium capitalize ring-1 ring-inset ${
-              PROGRESS_TONE[current.status]
-            }`}
-          >
-            {current.status}
-          </span>
-        </section>
-
-        <section className="rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-            Next up
-          </p>
-          <div className="mt-3 space-y-3">
-            {queued.length > 0 ? (
-              queued.map((step) => (
-                <div key={step.id}>
-                  <p className="text-sm font-medium text-zinc-900">
-                    {step.title}
-                  </p>
-                  <p className="mt-1 text-sm leading-relaxed text-zinc-500">
-                    {step.detail}
-                  </p>
-                </div>
-              ))
-            ) : (
-              <p className="text-sm text-zinc-500">No queued steps.</p>
-            )}
-          </div>
-        </section>
-      </aside>
-    </section>
-  );
-}
-
 export function RunPanel({
   experiment,
   metricName,
@@ -290,173 +202,296 @@ export function RunPanel({
   experiment: Experiment;
   metricName: string;
 }) {
-  const currentTrial =
+  const defaultTrial =
     experiment.trials.find((trial) => trial.status === "running") ??
     experiment.trials[0];
-  const currentTrialId = currentTrial?.id ?? null;
-  const [expandedState, setExpandedState] = useState<{
-    currentTrialId: string | null;
-    expandedTrialId: string | null;
+  const defaultTrialId = defaultTrial?.id ?? null;
+  const [manualSelection, setManualSelection] = useState<{
+    experimentId: string;
+    trialId: string;
   } | null>(null);
-  const expandedTrialId =
-    expandedState?.currentTrialId === currentTrialId
-      ? expandedState.expandedTrialId
-      : currentTrialId;
+  const [logState, setLogState] = useState<TrialLogState>({ status: "idle" });
+  const logScrollRef = useRef<HTMLDivElement>(null);
+  const shouldStickToBottomRef = useRef(true);
+  const manualTrialId =
+    manualSelection?.experimentId === experiment.id
+      ? manualSelection.trialId
+      : null;
+  const selectedTrialId =
+    manualTrialId &&
+    experiment.trials.some((trial) => trial.id === manualTrialId)
+      ? manualTrialId
+      : defaultTrialId;
+  const selectedTrial =
+    experiment.trials.find((trial) => trial.id === selectedTrialId) ??
+    defaultTrial ??
+    null;
+  const logIsLive =
+    experiment.status === "running" || selectedTrial?.status === "running";
+
+  useEffect(() => {
+    shouldStickToBottomRef.current = true;
+  }, [selectedTrialId]);
+
+  useEffect(() => {
+    if (!selectedTrial) {
+      return;
+    }
+
+    let canceled = false;
+    const url = `/api/experiments/${encodeURIComponent(
+      experiment.id,
+    )}/trials/${encodeURIComponent(selectedTrial.id)}/log`;
+
+    const loadLog = async () => {
+      setLogState((current) =>
+        current.status === "loaded" && current.trialId === selectedTrial.id
+          ? current
+          : { status: "loading", trialId: selectedTrial.id },
+      );
+
+      try {
+        const response = await fetch(url, { cache: "no-store" });
+        const data = (await response.json()) as {
+          markdown?: string;
+          updatedAt?: string;
+          error?: string;
+        };
+
+        if (canceled) {
+          return;
+        }
+
+        if (!response.ok) {
+          setLogState({
+            status: "error",
+            trialId: selectedTrial.id,
+            message: data.error ?? "Could not load trial log.",
+          });
+          return;
+        }
+
+        setLogState({
+          status: "loaded",
+          trialId: selectedTrial.id,
+          markdown: data.markdown ?? "",
+          updatedAt: data.updatedAt,
+        });
+      } catch (error) {
+        if (!canceled) {
+          setLogState({
+            status: "error",
+            trialId: selectedTrial.id,
+            message: error instanceof Error ? error.message : "Request failed.",
+          });
+        }
+      }
+    };
+
+    void loadLog();
+
+    if (!logIsLive) {
+      return () => {
+        canceled = true;
+      };
+    }
+
+    const interval = window.setInterval(() => void loadLog(), 1000);
+
+    return () => {
+      canceled = true;
+      window.clearInterval(interval);
+    };
+  }, [experiment.id, logIsLive, selectedTrial]);
+
+  useEffect(() => {
+    const element = logScrollRef.current;
+
+    if (!element || !shouldStickToBottomRef.current) {
+      return;
+    }
+
+    element.scrollTop = element.scrollHeight;
+  }, [logState]);
+
+  const onLogScroll = () => {
+    const element = logScrollRef.current;
+
+    if (!element) {
+      return;
+    }
+
+    const distanceFromBottom =
+      element.scrollHeight - element.scrollTop - element.clientHeight;
+    shouldStickToBottomRef.current = distanceFromBottom < 48;
+  };
 
   return (
-    <section className="space-y-5">
-      <RunProgressSteps steps={experiment.progressSteps} />
+    <section className="grid h-full min-h-[34rem] gap-5 xl:grid-cols-[22rem_minmax(0,1fr)]">
+      <section className="rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
+        <h2 className="text-base font-semibold tracking-tight text-zinc-900">
+          Trial history
+        </h2>
+        <p className="mt-1 text-sm text-zinc-500">
+          Select one trial to inspect its live execution log.
+        </p>
 
-      <section className="grid gap-5 xl:grid-cols-[0.85fr_1.15fr]">
-        <section className="rounded-2xl bg-zinc-50/70 p-4 ring-1 ring-zinc-950/5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-            Current trial
-          </p>
-          {currentTrial ? (
-            <>
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="font-mono text-xs font-semibold text-zinc-900">
-                    {currentTrial.id}
-                  </p>
-                  <h2 className="mt-1 truncate text-base font-semibold text-zinc-900">
-                    {currentTrial.title}
-                  </h2>
-                </div>
-                <span
-                  className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ring-1 ring-inset ring-black/5 ${
-                    TRIAL_TONE[currentTrial.status]
+        {experiment.trials.length === 0 ? (
+          <div className="mt-5">
+            <EmptyState
+              title="No trials yet."
+              body="Start the experiment after evaluation setup to create the first trial."
+            />
+          </div>
+        ) : (
+          <div className="mt-5 space-y-2">
+            {experiment.trials.map((trial) => {
+              const selected = selectedTrial?.id === trial.id;
+              const evalProgress = evalProgressLabel(
+                trial,
+                experiment.evalBudgetPerTrial,
+              );
+
+              return (
+                <button
+                  key={trial.id}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() =>
+                    setManualSelection({
+                      experimentId: experiment.id,
+                      trialId: trial.id,
+                    })
+                  }
+                  className={`w-full rounded-xl border px-3 py-3 text-left transition-colors ${
+                    selected
+                      ? "border-blue-200 bg-blue-50/70"
+                      : "border-zinc-200/70 bg-white/60 hover:bg-zinc-50"
                   }`}
                 >
-                  {statusLabel(currentTrial.status)}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-mono text-xs font-semibold text-zinc-900">
+                          {trial.id}
+                        </p>
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ring-1 ring-inset ring-black/5 ${
+                            TRIAL_TONE[trial.status]
+                          }`}
+                        >
+                          {statusLabel(trial.status)}
+                        </span>
+                      </div>
+                      <h3 className="mt-2 truncate text-sm font-medium text-zinc-900">
+                        {trial.title}
+                      </h3>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="text-[11px] text-zinc-400">{metricName}</p>
+                      <p className="mt-0.5 text-sm font-semibold text-zinc-900">
+                        {trial.metricValue}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-zinc-400">
+                    <span>{trial.duration}</span>
+                    {evalProgress && <span>{evalProgress}</span>}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <section className="flex min-w-0 flex-col rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
+        {selectedTrial ? (
+          <>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-mono text-xs font-semibold text-zinc-500">
+                  {selectedTrial.id}
+                </p>
+                <h2 className="mt-1 truncate text-base font-semibold tracking-tight text-zinc-900">
+                  {selectedTrial.title}
+                </h2>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {logIsLive && (
+                  <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700 ring-1 ring-inset ring-blue-200/70">
+                    Live
+                  </span>
+                )}
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ring-1 ring-inset ring-black/5 ${
+                    TRIAL_TONE[selectedTrial.status]
+                  }`}
+                >
+                  {statusLabel(selectedTrial.status)}
                 </span>
               </div>
-              <p className="mt-3 text-sm leading-relaxed text-zinc-500">
-                {currentTrial.summary}
-              </p>
-              <div className="mt-4 divide-y divide-zinc-200/70 text-sm">
-                <div className="flex items-center justify-between gap-3 py-2 first:pt-0">
-                  <span className="text-zinc-500">{metricName}</span>
-                  <span className="font-semibold text-zinc-900">
-                    {currentTrial.metricValue}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-3 py-2">
-                  <span className="text-zinc-500">Duration</span>
-                  <span className="font-semibold text-zinc-900">
-                    {currentTrial.duration}
-                  </span>
-                </div>
-                {currentTrial.evalsUsed !== undefined && (
-                  <div className="flex items-center justify-between gap-3 py-2 last:pb-0">
-                    <span className="text-zinc-500">Eval progress</span>
-                    <span className="font-semibold text-zinc-900">
-                      {evalProgressLabel(
-                        currentTrial,
-                        experiment.evalBudgetPerTrial,
-                      )}
-                    </span>
-                  </div>
-                )}
+            </div>
+
+            <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
+              <div>
+                <p className="text-xs text-zinc-400">{metricName}</p>
+                <p className="mt-1 font-semibold text-zinc-900">
+                  {selectedTrial.metricValue}
+                </p>
               </div>
-            </>
-          ) : (
-            <div className="mt-3">
-              <EmptyState
-                title="No trials yet."
-                body="Start the experiment after evaluation setup to create the first trial."
-              />
+              <div>
+                <p className="text-xs text-zinc-400">Duration</p>
+                <p className="mt-1 font-semibold text-zinc-900">
+                  {selectedTrial.duration}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-zinc-400">Updated</p>
+                <p className="mt-1 truncate font-mono text-xs font-semibold text-zinc-900">
+                  {logState.status === "loaded" && logState.updatedAt
+                    ? new Date(logState.updatedAt).toLocaleTimeString()
+                    : "Waiting"}
+                </p>
+              </div>
             </div>
-          )}
-        </section>
 
-        <section className="rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
-          <h2 className="text-base font-semibold tracking-tight text-zinc-900">
-            Trial history
-          </h2>
-          <p className="mt-1 text-sm text-zinc-500">
-            Latest attempts and measured outcomes.
-          </p>
-
-          {experiment.trials.length === 0 ? (
-            <div className="mt-5">
-              <EmptyState title="No trials yet." />
+            <div
+              ref={logScrollRef}
+              onScroll={onLogScroll}
+              className="mt-5 min-h-0 flex-1 overflow-auto rounded-xl bg-zinc-50/80 text-xs ring-1 ring-zinc-950/10"
+            >
+              {logState.status === "loading" ? (
+                <div className="space-y-2 p-4">
+                  <div className="h-3 w-2/5 rounded-full bg-zinc-200" />
+                  <div className="h-3 w-4/5 rounded-full bg-zinc-200" />
+                  <div className="h-3 w-3/5 rounded-full bg-zinc-200" />
+                </div>
+              ) : logState.status === "error" ? (
+                <div className="p-4">
+                  <EmptyState
+                    title="Could not load trial log."
+                    body={logState.message}
+                  />
+                </div>
+              ) : logState.status === "loaded" && logState.markdown.trim() ? (
+                <pre className="whitespace-pre-wrap break-words px-4 py-4 font-mono leading-5 text-zinc-700">
+                  {logState.markdown}
+                </pre>
+              ) : (
+                <div className="p-4">
+                  <EmptyState title="Trial log will appear when Codex starts work." />
+                </div>
+              )}
             </div>
-          ) : (
-            <div className="mt-5 divide-y divide-zinc-200/70 overflow-hidden rounded-2xl bg-white/55 ring-1 ring-zinc-950/5">
-              {experiment.trials.map((trial) => {
-                const expanded = expandedTrialId === trial.id;
-                const evalProgress = evalProgressLabel(
-                  trial,
-                  experiment.evalBudgetPerTrial,
-                );
-
-                return (
-                  <article key={trial.id}>
-                    <button
-                      type="button"
-                      aria-expanded={expanded}
-                      aria-controls={`trial-${trial.id}-details`}
-                      onClick={() =>
-                        setExpandedState({
-                          currentTrialId,
-                          expandedTrialId: expanded ? null : trial.id,
-                        })
-                      }
-                      className="grid w-full gap-3 px-4 py-3 text-left transition-colors hover:bg-zinc-50/80 sm:grid-cols-[1fr_auto]"
-                    >
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="font-mono text-xs font-semibold text-zinc-900">
-                            {trial.id}
-                          </p>
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ring-1 ring-inset ring-black/5 ${
-                              TRIAL_TONE[trial.status]
-                            }`}
-                          >
-                            {statusLabel(trial.status)}
-                          </span>
-                        </div>
-                        <h3 className="mt-2 truncate text-sm font-medium text-zinc-900">
-                          {trial.title}
-                        </h3>
-                        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-zinc-400">
-                          <span>{trial.duration}</span>
-                          {evalProgress && (
-                            <span>Eval progress: {evalProgress}</span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex items-start justify-between gap-3 sm:justify-end">
-                        <div className="text-left sm:text-right">
-                          <p className="text-xs text-zinc-400">{metricName}</p>
-                          <p className="mt-0.5 text-sm font-semibold text-zinc-900">
-                            {trial.metricValue}
-                          </p>
-                        </div>
-                        <ArrowDownIcon
-                          className={`mt-0.5 h-4 w-4 shrink-0 text-zinc-400 transition-transform ${
-                            expanded ? "rotate-180" : ""
-                          }`}
-                        />
-                      </div>
-                    </button>
-
-                    {expanded && (
-                      <div
-                        id={`trial-${trial.id}-details`}
-                        className="px-4 pb-4 text-sm leading-relaxed text-zinc-500"
-                      >
-                        {trial.summary}
-                      </div>
-                    )}
-                  </article>
-                );
-              })}
-            </div>
-          )}
-        </section>
+          </>
+        ) : (
+          <EmptyState
+            title="No trials yet."
+            body="Run the experiment to create live trial logs."
+          />
+        )}
       </section>
     </section>
   );

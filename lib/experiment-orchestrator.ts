@@ -20,6 +20,10 @@ import {
   type ProgressStep,
   type ScoreDirection,
 } from "@/lib/experiments";
+import {
+  appendTrialLog,
+  createTrialLog,
+} from "@/lib/trial-log-store";
 
 const execAsync = promisify(execCallback);
 const execFileAsync = promisify(execFileCallback);
@@ -485,18 +489,59 @@ export class ExperimentOrchestrator {
       improved: false,
       startedAt,
     };
+    trial = {
+      ...trial,
+      log: await createTrialLog({
+        experimentId: experiment.id,
+        trialId: worktree.id,
+        title: trial.title,
+        status: trial.status,
+        branchName: worktree.branchName,
+        agentWorktreePath: worktree.agentPath,
+        evalWorktreePath: worktree.evalPath,
+      }),
+    };
     let nextExperiment = withTrial(experiment, trial);
+    const appendLog = async (markdown: string) => {
+      const log = await appendTrialLog(experiment.id, worktree.id, markdown);
+      trial = { ...trial, log };
+    };
+
+    await persistExperiment(nextExperiment);
+    await appendLog(
+      [
+        "## Orchestration",
+        "",
+        "[Setup]",
+        `Created trial worktrees from base commit ${input.baseCommit}.`,
+        `Eval budget: ${evalBudget}`,
+      ].join("\n"),
+    );
+    nextExperiment = withTrial(nextExperiment, trial);
 
     try {
-      let turn = await this.trialAgent.startTrial({
-        repoPath: worktree.agentPath,
-        objective: experiment.objective,
-        scoreName: contract.scoreName,
-        scoreDirection: contract.scoreDirection,
-        baselineScore,
-        evalBudget,
-        trialNumber,
-      });
+      let turn = await this.trialAgent.startTrial(
+        {
+          repoPath: worktree.agentPath,
+          objective: experiment.objective,
+          scoreName: contract.scoreName,
+          scoreDirection: contract.scoreDirection,
+          baselineScore,
+          evalBudget,
+          trialNumber,
+        },
+        {
+          turnNumber: 1,
+          inputSummary: `Started optimization trial ${trialNumber} for objective: ${experiment.objective}`,
+          appendLog,
+          onThreadStarted: async (threadId) => {
+            trial = { ...trial, threadId };
+            nextExperiment = withTrial(nextExperiment, trial);
+            await persistExperiment(nextExperiment);
+            await appendLog(`[Setup]\nThread: ${threadId}`);
+          },
+        },
+      );
       trial = {
         ...trial,
         threadId: turn.trialThreadId,
@@ -514,6 +559,15 @@ export class ExperimentOrchestrator {
             duration: "Blocked",
             completedAt: new Date().toISOString(),
           };
+          await appendLog(
+            [
+              "## Final Status",
+              "",
+              "Failed",
+              "Trial stopped because Codex reported it was blocked.",
+              trial.commitSha ? `Commit: ${trial.commitSha}` : "Commit: none",
+            ].join("\n"),
+          );
           return withTrial(nextExperiment, trial);
         }
 
@@ -522,6 +576,14 @@ export class ExperimentOrchestrator {
         }
 
         const evalsUsed = trial.evalsUsed + 1;
+        await appendLog(
+          [
+            `## Evaluation ${evalsUsed}`,
+            "",
+            "[Snapshot]",
+            "Committing trial changes for evaluation.",
+          ].join("\n"),
+        );
         const commitSha = await snapshotTrialChanges(
           worktree.agentPath,
           trial.id,
@@ -530,6 +592,7 @@ export class ExperimentOrchestrator {
         trial = { ...trial, commitSha };
         nextExperiment = withTrial(nextExperiment, trial);
         await persistExperiment(nextExperiment);
+        await appendLog(`[Snapshot]\nCommitted trial changes as ${commitSha}.`);
 
         await resetEvalWorktree(worktree.evalPath, commitSha);
         const score = await runEvaluation(
@@ -541,6 +604,15 @@ export class ExperimentOrchestrator {
           score,
           baselineScore,
           contract.scoreDirection,
+        );
+        await appendLog(
+          [
+            "[Output]",
+            `Score: ${formatScore(score)}`,
+            `Baseline: ${formatScore(baselineScore)}`,
+            `Result: ${improved ? "improved" : "did not beat the baseline"}`,
+            `Remaining eval requests: ${evalBudget - evalsUsed}`,
+          ].join("\n"),
         );
 
         trial = {
@@ -570,6 +642,18 @@ export class ExperimentOrchestrator {
             duration: `${evalsUsed} eval${evalsUsed === 1 ? "" : "s"}`,
             completedAt: new Date().toISOString(),
           };
+          await appendLog(
+            [
+              "[Status]",
+              "Completed. Trial stopped because it beat the baseline.",
+              "",
+              "## Final Status",
+              "",
+              "Completed",
+              `Best score: ${formatScore(score)}`,
+              `Commit: ${commitSha}`,
+            ].join("\n"),
+          );
           return withTrial(nextExperiment, trial);
         }
 
@@ -577,11 +661,24 @@ export class ExperimentOrchestrator {
           break;
         }
 
-        turn = await this.trialAgent.continueTrial({
-          trialThreadId: turn.trialThreadId,
-          repoPath: worktree.agentPath,
-          instruction: buildEvalFeedback(score, false, evalBudget - evalsUsed),
-        });
+        const remaining = evalBudget - evalsUsed;
+        const turnNumber = evalsUsed + 1;
+        turn = await this.trialAgent.continueTrial(
+          {
+            trialThreadId: turn.trialThreadId,
+            repoPath: worktree.agentPath,
+            instruction: buildEvalFeedback(score, false, remaining),
+          },
+          {
+            turnNumber,
+            inputSummary: [
+              `Continued after evaluation ${evalsUsed}.`,
+              `Score: ${formatScore(score)}.`,
+              `Remaining eval requests: ${remaining}.`,
+            ].join(" "),
+            appendLog,
+          },
+        );
         trial = { ...trial, summary: turn.response.message };
         nextExperiment = withTrial(nextExperiment, trial);
         await persistExperiment(nextExperiment);
@@ -599,6 +696,19 @@ export class ExperimentOrchestrator {
         }`,
         completedAt: new Date().toISOString(),
       };
+      await appendLog(
+        [
+          "## Final Status",
+          "",
+          trial.score === undefined
+            ? "Completed without requesting an evaluation."
+            : "Completed without improving the baseline.",
+          trial.score === undefined
+            ? "Best score: none"
+            : `Best score: ${formatScore(trial.score)}`,
+          trial.commitSha ? `Commit: ${trial.commitSha}` : "Commit: none",
+        ].join("\n"),
+      );
 
       return withTrial(nextExperiment, trial);
     } catch (error) {
@@ -610,6 +720,15 @@ export class ExperimentOrchestrator {
         duration: "Failed",
         completedAt: new Date().toISOString(),
       };
+      await appendLog(
+        [
+          "## Final Status",
+          "",
+          "Failed",
+          error instanceof Error ? error.message : "Trial failed.",
+          trial.commitSha ? `Commit: ${trial.commitSha}` : "Commit: none",
+        ].join("\n"),
+      );
 
       return withTrial(nextExperiment, trial);
     }
@@ -644,6 +763,16 @@ export class ExperimentOrchestrator {
         bestBranchName,
         bestTrial.commitSha,
       ]);
+      await appendTrialLog(
+        experiment.id,
+        bestTrial.id,
+        [
+          "## Run Selection",
+          "",
+          "[Status]",
+          `Best branch ${bestBranchName} created from this trial.`,
+        ].join("\n"),
+      );
     }
 
     const metrics = updateRunMetrics(
