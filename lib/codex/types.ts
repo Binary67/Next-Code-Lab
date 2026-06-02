@@ -5,6 +5,13 @@ export type TrialEvaluationContract = {
   scoreName: string;
 };
 
+export type TokenUsage = {
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  reasoningOutputTokens: number;
+};
+
 export type EvalSetupQuestionResult = {
   status: "question";
   message: string;
@@ -80,4 +87,5 @@ export type TrialAgentResponse = {
 export type TrialAgentResult = {
   trialThreadId: string;
   response: TrialAgentResponse;
+  tokenUsage: TokenUsage;
 };

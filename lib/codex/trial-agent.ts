@@ -3,6 +3,7 @@ import type { Thread, ThreadEvent, ThreadOptions } from "@openai/codex-sdk";
 import type {
   ContinueTrialInput,
   StartTrialInput,
+  TokenUsage,
   TrialAgentResponse,
   TrialAgentResult,
 } from "./types";
@@ -38,8 +39,28 @@ type StreamLogState = {
   commandOutputLengths: Map<string, number>;
   loggedCommands: Set<string>;
   finalResponse: string;
+  tokenUsage: TokenUsage;
   turnFailure?: string;
 };
+
+function emptyTokenUsage(): TokenUsage {
+  return {
+    inputTokens: 0,
+    cachedInputTokens: 0,
+    outputTokens: 0,
+    reasoningOutputTokens: 0,
+  };
+}
+
+function addTokenUsage(current: TokenUsage, next: TokenUsage): TokenUsage {
+  return {
+    inputTokens: current.inputTokens + next.inputTokens,
+    cachedInputTokens: current.cachedInputTokens + next.cachedInputTokens,
+    outputTokens: current.outputTokens + next.outputTokens,
+    reasoningOutputTokens:
+      current.reasoningOutputTokens + next.reasoningOutputTokens,
+  };
+}
 
 function parseTrialResponse(finalResponse: string): TrialAgentResponse {
   let parsed: unknown;
@@ -137,13 +158,20 @@ async function appendEventLog(
   }
 
   if (event.type === "turn.completed") {
+    const usage = {
+      inputTokens: event.usage.input_tokens,
+      cachedInputTokens: event.usage.cached_input_tokens,
+      outputTokens: event.usage.output_tokens,
+      reasoningOutputTokens: event.usage.reasoning_output_tokens,
+    };
+    state.tokenUsage = addTokenUsage(state.tokenUsage, usage);
     await appendLog(
       [
         "[Usage]",
-        `Input tokens: ${event.usage.input_tokens}`,
-        `Cached input tokens: ${event.usage.cached_input_tokens}`,
-        `Output tokens: ${event.usage.output_tokens}`,
-        `Reasoning output tokens: ${event.usage.reasoning_output_tokens}`,
+        `Input tokens: ${usage.inputTokens}`,
+        `Cached input tokens: ${usage.cachedInputTokens}`,
+        `Output tokens: ${usage.outputTokens}`,
+        `Reasoning output tokens: ${usage.reasoningOutputTokens}`,
       ].join("\n"),
     );
     return;
@@ -226,7 +254,7 @@ async function runTrialTurn(
   thread: Thread,
   input: string,
   options: TrialLogOptions,
-): Promise<TrialAgentResponse> {
+): Promise<{ response: TrialAgentResponse; tokenUsage: TokenUsage }> {
   await options.appendLog?.(
     [`## Turn ${options.turnNumber}`, "", "[Input]", options.inputSummary].join(
       "\n",
@@ -240,6 +268,7 @@ async function runTrialTurn(
     commandOutputLengths: new Map(),
     loggedCommands: new Set(),
     finalResponse: "",
+    tokenUsage: emptyTokenUsage(),
   };
 
   try {
@@ -260,7 +289,7 @@ async function runTrialTurn(
   try {
     const response = parseTrialResponse(state.finalResponse);
     await options.appendLog?.(`[Agent Response]\n${response.message}`);
-    return response;
+    return { response, tokenUsage: state.tokenUsage };
   } catch (error) {
     await options.appendLog?.(
       `[Error]\n${error instanceof Error ? error.message : "Codex returned invalid output."}`,
@@ -280,7 +309,7 @@ export class CodexTrialAgent {
       ...trialThreadOptions,
       workingDirectory: input.repoPath,
     });
-    const response = await runTrialTurn(
+    const turn = await runTrialTurn(
       thread,
       startInstruction(input),
       options ?? {
@@ -296,7 +325,8 @@ export class CodexTrialAgent {
 
     return {
       trialThreadId,
-      response,
+      response: turn.response,
+      tokenUsage: turn.tokenUsage,
     };
   }
 
@@ -308,7 +338,7 @@ export class CodexTrialAgent {
       ...trialThreadOptions,
       workingDirectory: input.repoPath,
     });
-    const response = await runTrialTurn(
+    const turn = await runTrialTurn(
       thread,
       input.instruction,
       options ?? {
@@ -319,7 +349,8 @@ export class CodexTrialAgent {
 
     return {
       trialThreadId: input.trialThreadId,
-      response,
+      response: turn.response,
+      tokenUsage: turn.tokenUsage,
     };
   }
 }

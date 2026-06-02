@@ -20,10 +20,42 @@ const DETAIL_TABS: { id: DetailTabId; label: string }[] = [
   { id: "collab", label: "Agent Collab" },
   { id: "changes", label: "Changes" },
 ];
+
+function formatTokenUnit(value: number) {
+  const rounded = Number(value.toFixed(1));
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
+function formatTokenCount(value: number) {
+  if (value >= 1_000_000) {
+    return `${formatTokenUnit(value / 1_000_000)}M`;
+  }
+
+  if (value >= 1_000) {
+    return `${formatTokenUnit(value / 1_000)}k`;
+  }
+
+  return String(value);
+}
+
+function experimentTokenUsage(experiment: Experiment) {
+  return experiment.trials.reduce(
+    (total, trial) => ({
+      inputTokens: total.inputTokens + (trial.tokenUsage?.inputTokens ?? 0),
+      cachedInputTokens:
+        total.cachedInputTokens + (trial.tokenUsage?.cachedInputTokens ?? 0),
+      outputTokens: total.outputTokens + (trial.tokenUsage?.outputTokens ?? 0),
+    }),
+    { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 },
+  );
+}
+
 function DetailStatusStrip({ experiment }: { experiment: Experiment }) {
   const latestTrial: ExperimentTrial | undefined = experiment.trials[0];
   const trials = experiment.metrics.find((metric) => metric.label === "Trials");
   const evaluation = experiment.evaluation;
+  const tokenUsage = experimentTokenUsage(experiment);
+  const tokenTotal = tokenUsage.inputTokens + tokenUsage.outputTokens;
   const statusDetail = experiment.pendingQuestion
     ? "User input required"
     : experiment.timing ?? latestTrial?.duration ?? "Not started";
@@ -37,12 +69,6 @@ function DetailStatusStrip({ experiment }: { experiment: Experiment }) {
       label: experiment.metricLabel,
       value: experiment.metricValue,
       detail: "Current",
-    },
-    {
-      label: "Mode",
-      value:
-        evaluation.mode === "existing" ? "Existing script" : "Generated script",
-      detail: evaluationStatusLabel(evaluation.status),
     },
     {
       label: "Score",
@@ -65,6 +91,14 @@ function DetailStatusStrip({ experiment }: { experiment: Experiment }) {
         latestTrial?.duration ??
         "Not started",
       detail: `${trials?.value ?? experiment.trials.length} trials`,
+    },
+    {
+      label: "Tokens",
+      value: tokenTotal > 0 ? formatTokenCount(tokenTotal) : "None",
+      detail:
+        tokenUsage.cachedInputTokens > 0
+          ? `${formatTokenCount(tokenUsage.cachedInputTokens)} cached`
+          : "No usage yet",
     },
   ];
 

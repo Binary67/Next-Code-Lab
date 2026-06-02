@@ -1,6 +1,8 @@
 import { appendFile, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 
+import type { TokenUsage } from "@/lib/codex/types";
+
 const localDataDir = resolve(process.cwd(), ".local");
 const trialLogsDir = resolve(localDataDir, "trial-logs");
 
@@ -71,6 +73,39 @@ function ensureTrailingBlankLine(value: string) {
   return value.endsWith("\n\n") ? value : `${value.replace(/\s+$/u, "")}\n\n`;
 }
 
+function emptyTokenUsage(): TokenUsage {
+  return {
+    inputTokens: 0,
+    cachedInputTokens: 0,
+    outputTokens: 0,
+    reasoningOutputTokens: 0,
+  };
+}
+
+export function parseTrialLogTokenUsage(markdown: string): TokenUsage | undefined {
+  const usage = emptyTokenUsage();
+  let found = false;
+
+  for (const match of markdown.matchAll(
+    /^(Input tokens|Cached input tokens|Output tokens|Reasoning output tokens):\s*(\d+)\s*$/gmu,
+  )) {
+    found = true;
+    const value = Number(match[2]);
+
+    if (match[1] === "Input tokens") {
+      usage.inputTokens += value;
+    } else if (match[1] === "Cached input tokens") {
+      usage.cachedInputTokens += value;
+    } else if (match[1] === "Output tokens") {
+      usage.outputTokens += value;
+    } else {
+      usage.reasoningOutputTokens += value;
+    }
+  }
+
+  return found ? usage : undefined;
+}
+
 export async function createTrialLog(
   input: CreateTrialLogInput,
 ): Promise<TrialLogMeta> {
@@ -135,6 +170,23 @@ export async function readTrialLog(experimentId: string, trialId: string) {
   } catch (error) {
     if (isMissingFile(error)) {
       return { markdown: "", updatedAt };
+    }
+
+    throw error;
+  }
+}
+
+export async function readTrialTokenUsage(
+  experimentId: string,
+  trialId: string,
+) {
+  const path = resolveTrialLogPath(experimentId, trialId);
+
+  try {
+    return parseTrialLogTokenUsage(await readFile(path, "utf8"));
+  } catch (error) {
+    if (isMissingFile(error)) {
+      return undefined;
     }
 
     throw error;

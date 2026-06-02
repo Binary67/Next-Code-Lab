@@ -1,4 +1,4 @@
-import type { TrialEvaluationContract } from "./codex/types";
+import type { TokenUsage, TrialEvaluationContract } from "./codex/types";
 
 export type Status = "setup" | "running" | "needs-input" | "completed" | "failed";
 export type ScoreDirection = "minimize" | "maximize";
@@ -34,6 +34,7 @@ export type ExperimentTrial = {
   score?: number;
   evalsUsed?: number;
   improved?: boolean;
+  tokenUsage?: TokenUsage;
   startedAt?: string;
   completedAt?: string;
   log?: {

@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 
 import type {
+  TokenUsage,
   TrialAgentResponse,
   TrialEvaluationContract,
 } from "@/lib/codex/types";
@@ -44,6 +45,30 @@ function formatScore(score: number) {
   return Number.isInteger(score)
     ? String(score)
     : String(Number(score.toFixed(6)));
+}
+
+function emptyTokenUsage(): TokenUsage {
+  return {
+    inputTokens: 0,
+    cachedInputTokens: 0,
+    outputTokens: 0,
+    reasoningOutputTokens: 0,
+  };
+}
+
+function addTokenUsage(
+  current: TokenUsage | undefined,
+  next: TokenUsage,
+): TokenUsage {
+  const base = current ?? emptyTokenUsage();
+
+  return {
+    inputTokens: base.inputTokens + next.inputTokens,
+    cachedInputTokens: base.cachedInputTokens + next.cachedInputTokens,
+    outputTokens: base.outputTokens + next.outputTokens,
+    reasoningOutputTokens:
+      base.reasoningOutputTokens + next.reasoningOutputTokens,
+  };
 }
 
 export function isScoreImproved(
@@ -546,6 +571,7 @@ export class ExperimentOrchestrator {
         ...trial,
         threadId: turn.trialThreadId,
         summary: turn.response.message,
+        tokenUsage: addTokenUsage(trial.tokenUsage, turn.tokenUsage),
       };
       nextExperiment = withTrial(nextExperiment, trial);
       await persistExperiment(nextExperiment);
@@ -680,6 +706,10 @@ export class ExperimentOrchestrator {
           },
         );
         trial = { ...trial, summary: turn.response.message };
+        trial = {
+          ...trial,
+          tokenUsage: addTokenUsage(trial.tokenUsage, turn.tokenUsage),
+        };
         nextExperiment = withTrial(nextExperiment, trial);
         await persistExperiment(nextExperiment);
       }
