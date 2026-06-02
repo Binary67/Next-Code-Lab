@@ -92,10 +92,16 @@ export function EvaluationPanel({
   };
 
   return (
-    <section className="grid h-full min-h-0 gap-5 overflow-y-auto scrollbar-hidden lg:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)] lg:overflow-hidden">
-      <div className="flex min-h-0 flex-col gap-5">
-        <section className="rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
-          <div className="flex flex-wrap items-start justify-between gap-3">
+    <section className="grid h-full min-h-0 overflow-y-auto rounded-2xl bg-white/75 ring-1 ring-zinc-200/80 scrollbar-hidden lg:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)] lg:divide-x lg:divide-zinc-200/80 lg:overflow-hidden">
+      <div className="flex min-h-0 flex-col gap-5 bg-white px-4 py-4 scrollbar-hidden lg:overflow-y-auto">
+        <section
+          className={`rounded-2xl border border-l-4 bg-white p-4 shadow-sm ${
+            isReady
+              ? "border-emerald-200 border-l-emerald-500"
+              : "border-amber-200 border-l-amber-400"
+          }`}
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-zinc-200/80 pb-4">
             <div>
               <h2 className="text-base font-semibold tracking-tight text-zinc-900">
                 Evaluation setup
@@ -147,7 +153,7 @@ export function EvaluationPanel({
         </section>
 
         {evaluation.mode === "existing" ? (
-          <section className="rounded-2xl bg-zinc-50/70 p-4 ring-1 ring-zinc-950/5">
+          <section className="rounded-2xl border border-l-4 border-zinc-200 border-l-blue-500 bg-zinc-50/80 p-4 shadow-sm">
             <div className="grid gap-4 lg:grid-cols-2">
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-zinc-700">
@@ -238,20 +244,22 @@ export function EvaluationPanel({
                     Fill the template or let the setup agent collect the details.
                   </p>
                 </div>
-	                <button
-	                  type="button"
-	                  onClick={() => onStartInterview(experiment)}
-	                  disabled={isEvalSetupPending}
-	                  className="rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-amber-700 ring-1 ring-amber-200 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
-	                >
-	                  {pendingAction === "start" ? "Starting..." : "Interview to fill gaps"}
-	                </button>
+                <button
+                  type="button"
+                  onClick={() => onStartInterview(experiment)}
+                  disabled={isEvalSetupPending}
+                  className="rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-amber-700 ring-1 ring-amber-200 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {pendingAction === "start"
+                    ? "Starting..."
+                    : "Interview to fill gaps"}
+                </button>
               </div>
             )}
           </section>
         ) : (
-          <section className="flex min-h-[480px] flex-col overflow-hidden rounded-2xl bg-zinc-50/70 ring-1 ring-zinc-950/5 lg:min-h-0 lg:flex-1">
-            <header className="border-b border-zinc-200/70 bg-white/55 px-4 py-3">
+          <section className="flex min-h-[480px] flex-col overflow-hidden rounded-2xl border border-l-4 border-zinc-200 border-l-blue-500 bg-white shadow-sm lg:min-h-0 lg:flex-1">
+            <header className="border-b border-zinc-200/80 bg-blue-50/40 px-4 py-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h3 className="text-sm font-semibold text-zinc-900">
@@ -264,96 +272,96 @@ export function EvaluationPanel({
                     </span>
                   </p>
                 </div>
-	                {!evaluation.evalSetupThreadId && (
-	                  <button
-	                    type="button"
-	                    onClick={() => onStartInterview(experiment)}
-	                    disabled={isEvalSetupPending}
-	                    className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-	                  >
-	                    {pendingAction === "start" ? "Starting..." : "Start interview"}
-	                  </button>
-	                )}
+                {!evaluation.evalSetupThreadId && (
+                  <button
+                    type="button"
+                    onClick={() => onStartInterview(experiment)}
+                    disabled={isEvalSetupPending}
+                    className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {pendingAction === "start" ? "Starting..." : "Start interview"}
+                  </button>
+                )}
               </div>
             </header>
 
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-5 scrollbar-hidden">
-	              {evaluation.messages.length === 0 ? (
-	                <div className="rounded-xl bg-white/70 px-4 py-6 text-center ring-1 ring-zinc-950/5">
-	                  <p className="text-sm font-medium text-zinc-900">
-	                    {pendingAction
-	                      ? evalSetupPendingLabel(pendingAction)
-	                      : "No eval setup messages yet."}
-	                  </p>
-	                  <p className="mt-1 text-sm text-zinc-500">
-	                    {pendingAction
-	                      ? "This can take a moment."
-	                      : "Start the interview or describe what the eval should measure."}
-	                  </p>
-	                </div>
-	              ) : (
-	                <>
-	                  {evaluation.messages.map((message) => {
-	                    const fromUser = message.author === "user";
-	                    return (
-	                      <div
-	                        key={message.id}
-	                        className={`flex ${
-	                          fromUser ? "justify-end" : "justify-start"
-	                        }`}
-	                      >
-	                        <div
-	                          className={`max-w-[85%] rounded-2xl px-3.5 py-3 text-sm leading-relaxed ${
-	                            fromUser
-	                              ? "bg-blue-600 text-white shadow-sm"
-	                              : "bg-white/70 text-zinc-700 ring-1 ring-zinc-950/5"
-	                          }`}
-	                        >
-	                          <p className="whitespace-pre-line">{message.text}</p>
-	                          {!fromUser && message.choices && (
-	                            <div className="mt-3 flex flex-wrap gap-2">
-	                              {message.choices.map((choice) => (
-	                                <button
-	                                  key={choice}
-	                                  type="button"
-	                                  onClick={() => submitReply(choice)}
-	                                  disabled={!canUseSetupChat}
-	                                  className="rounded-lg bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 ring-1 ring-zinc-200 transition-colors hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-	                                >
-	                                  {choice}
-	                                </button>
-	                              ))}
-	                            </div>
-	                          )}
-	                          <p
-	                            className={`mt-2 text-[11px] ${
-	                              fromUser ? "text-blue-100" : "text-zinc-400"
-	                            }`}
-	                          >
-	                            {message.time}
-	                          </p>
-	                        </div>
-	                      </div>
-	                    );
-	                  })}
-	                  {pendingAction && (
-	                    <div className="flex justify-start">
-	                      <div className="inline-flex max-w-[85%] items-center gap-2 rounded-2xl bg-white/70 px-3.5 py-3 text-sm text-zinc-600 ring-1 ring-zinc-950/5">
-	                        <span className="h-2 w-2 animate-pulse rounded-full bg-blue-500" />
-	                        {evalSetupPendingLabel(pendingAction)}
-	                      </div>
-	                    </div>
-	                  )}
-	                </>
-	              )}
-	            </div>
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-zinc-50/75 px-4 py-5 scrollbar-hidden">
+              {evaluation.messages.length === 0 ? (
+                <div className="rounded-xl bg-white px-4 py-6 text-center ring-1 ring-zinc-200/80">
+                  <p className="text-sm font-medium text-zinc-900">
+                    {pendingAction
+                      ? evalSetupPendingLabel(pendingAction)
+                      : "No eval setup messages yet."}
+                  </p>
+                  <p className="mt-1 text-sm text-zinc-500">
+                    {pendingAction
+                      ? "This can take a moment."
+                      : "Start the interview or describe what the eval should measure."}
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {evaluation.messages.map((message) => {
+                    const fromUser = message.author === "user";
+                    return (
+                      <div
+                        key={message.id}
+                        className={`flex ${
+                          fromUser ? "justify-end" : "justify-start"
+                        }`}
+                      >
+                        <div
+                          className={`max-w-[85%] rounded-2xl px-3.5 py-3 text-sm leading-relaxed ${
+                            fromUser
+                              ? "bg-blue-600 text-white shadow-sm"
+                              : "bg-white text-zinc-700 ring-1 ring-zinc-200/80"
+                          }`}
+                        >
+                          <p className="whitespace-pre-line">{message.text}</p>
+                          {!fromUser && message.choices && (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {message.choices.map((choice) => (
+                                <button
+                                  key={choice}
+                                  type="button"
+                                  onClick={() => submitReply(choice)}
+                                  disabled={!canUseSetupChat}
+                                  className="rounded-lg bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 ring-1 ring-zinc-200 transition-colors hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {choice}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                          <p
+                            className={`mt-2 text-[11px] ${
+                              fromUser ? "text-blue-100" : "text-zinc-400"
+                            }`}
+                          >
+                            {message.time}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {pendingAction && (
+                    <div className="flex justify-start">
+                      <div className="inline-flex max-w-[85%] items-center gap-2 rounded-2xl bg-white px-3.5 py-3 text-sm text-zinc-600 ring-1 ring-zinc-200/80">
+                        <span className="h-2 w-2 animate-pulse rounded-full bg-blue-500" />
+                        {evalSetupPendingLabel(pendingAction)}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
 
             <form
               onSubmit={(e) => {
                 e.preventDefault();
                 sendReply();
               }}
-              className="border-t border-zinc-200/70 bg-white/55 p-4"
+              className="border-t border-zinc-200/80 bg-white p-4"
             >
               <textarea
                 value={reply}
@@ -390,10 +398,10 @@ export function EvaluationPanel({
         )}
       </div>
 
-      <aside className="space-y-5">
+      <aside className="space-y-5 border-t border-zinc-200/80 bg-sky-50/45 px-4 py-4 scrollbar-hidden lg:min-h-0 lg:overflow-y-auto lg:border-t-0">
         {evaluation.mode === "generated" && (
-          <section className="rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+          <section className="rounded-2xl border border-l-4 border-blue-100 border-l-blue-500 bg-white/90 p-4 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">
               Generated script
             </p>
             {evaluation.proposedContract ? (
@@ -448,8 +456,18 @@ export function EvaluationPanel({
           </section>
         )}
 
-        <section className="rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+        <section
+          className={`rounded-2xl border border-l-4 bg-white/90 p-4 shadow-sm ${
+            hasActiveEvalContract
+              ? "border-emerald-100 border-l-emerald-500"
+              : "border-zinc-200 border-l-zinc-300"
+          }`}
+        >
+          <p
+            className={`text-xs font-semibold uppercase tracking-wide ${
+              hasActiveEvalContract ? "text-emerald-700" : "text-zinc-400"
+            }`}
+          >
             {evaluation.mode === "generated"
               ? "Active eval contract"
               : "Eval contract"}
@@ -498,8 +516,8 @@ export function EvaluationPanel({
           </div>
         </section>
 
-        <section className="rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+        <section className="rounded-2xl border border-l-4 border-zinc-200 border-l-zinc-400 bg-white/90 p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
             Run settings
           </p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -536,8 +554,8 @@ export function EvaluationPanel({
           </div>
         </section>
 
-        <section className="rounded-2xl bg-zinc-50/70 p-4 ring-1 ring-zinc-950/5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+        <section className="rounded-2xl border border-l-4 border-amber-100 border-l-amber-300 bg-amber-50/55 p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">
             Contract behavior
           </p>
           <ul className="mt-3 space-y-2 text-sm text-zinc-500">

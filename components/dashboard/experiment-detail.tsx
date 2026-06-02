@@ -70,9 +70,9 @@ function DetailStatusStrip({ experiment }: { experiment: Experiment }) {
   ];
 
   return (
-    <div className="grid gap-px overflow-hidden rounded-2xl bg-zinc-200/70 ring-1 ring-zinc-950/5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+    <div className="grid gap-px overflow-hidden rounded-2xl bg-zinc-300/80 shadow-sm ring-1 ring-zinc-950/10 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
       {items.map((item) => (
-        <div key={item.label} className="min-w-0 bg-white/70 px-3.5 py-3">
+        <div key={item.label} className="min-w-0 bg-zinc-50/95 px-3.5 py-3">
           <p className="truncate text-xs font-medium text-zinc-500">
             {item.label}
           </p>
@@ -100,7 +100,7 @@ function DetailTabs({
   onChange: (tab: DetailTabId) => void;
 }) {
   return (
-    <nav className="flex min-w-0 shrink-0 gap-5 overflow-x-auto border-t border-zinc-200/70 px-5 scrollbar-hidden md:px-6">
+    <nav className="flex min-w-0 shrink-0 gap-5 overflow-x-auto border-y border-zinc-200/80 bg-white/70 px-5 scrollbar-hidden md:px-6">
       {DETAIL_TABS.map((tab) => {
         const selected = active === tab.id;
         const showInput = tab.id === "collab" && needsInput;
@@ -295,9 +295,9 @@ export function ExperimentDetail({
         role="dialog"
         aria-modal="true"
         aria-labelledby="experiment-detail-title"
-        className="relative z-10 flex h-[calc(100vh-2.5rem)] w-full max-w-[1760px] animate-scale-in flex-col overflow-hidden rounded-[28px] border border-white/70 bg-white/80 shadow-[0_24px_80px_rgba(15,23,42,0.18)] ring-1 ring-zinc-950/5 backdrop-blur-2xl md:h-[calc(100vh-4rem)]"
+        className="relative z-10 flex h-[calc(100vh-2.5rem)] w-full max-w-[1760px] animate-scale-in flex-col overflow-hidden rounded-[28px] border border-white/70 bg-zinc-50/90 shadow-[0_24px_80px_rgba(15,23,42,0.18)] ring-1 ring-zinc-950/5 backdrop-blur-2xl md:h-[calc(100vh-4rem)]"
       >
-        <header className="shrink-0 border-b border-zinc-200/70 bg-white/45 px-5 py-4 md:px-6 md:py-5">
+        <header className="shrink-0 border-b border-zinc-200/80 bg-white/80 px-5 py-4 md:px-6 md:py-5">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0 flex-1">
               <button
@@ -401,7 +401,7 @@ export function ExperimentDetail({
         />
 
         <div
-          className={`flex min-h-0 flex-1 flex-col bg-white/55 px-5 py-4 md:px-6 ${
+          className={`flex min-h-0 flex-1 flex-col bg-zinc-100/70 px-5 py-4 md:px-6 ${
             detailTab === "evaluation"
               ? "overflow-hidden"
               : "overflow-y-auto scrollbar-hidden"
