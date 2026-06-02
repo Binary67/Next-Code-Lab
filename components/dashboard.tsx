@@ -4,11 +4,15 @@ import { useEffect, useState, type ReactNode } from "react";
 import ExperimentCard from "@/components/experiment-card";
 import {
   experiments as seed,
+  type EvaluationMode,
+  type EvaluationStatus,
   type Experiment,
   type ExperimentChange,
+  type ExperimentEvaluation,
   type ExperimentMetric,
   type ExperimentTrial,
   type ProgressStep,
+  type ScoreDirection,
   type Status,
   type TrendPoint,
 } from "@/lib/experiments";
@@ -31,7 +35,13 @@ import {
 
 type NavId = "experiments" | "repositories" | "settings";
 type TabId = "all" | Status;
-type DetailTabId = "overview" | "progress" | "collab" | "trials" | "changes";
+type DetailTabId =
+  | "evaluation"
+  | "overview"
+  | "progress"
+  | "collab"
+  | "trials"
+  | "changes";
 type SourceType = "git" | "local";
 
 const PRIMARY_NAV = [
@@ -47,12 +57,14 @@ const BOTTOM_NAV = [
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "all", label: "All" },
+  { id: "setup", label: "Setup" },
   { id: "running", label: "Running" },
   { id: "needs-input", label: "Needs input" },
   { id: "completed", label: "Completed" },
 ];
 
 const DETAIL_TABS: { id: DetailTabId; label: string }[] = [
+  { id: "evaluation", label: "Evaluation" },
   { id: "overview", label: "Overview" },
   { id: "progress", label: "Progress" },
   { id: "collab", label: "Agent Collab" },
@@ -62,6 +74,91 @@ const DETAIL_TABS: { id: DetailTabId; label: string }[] = [
 
 const inputClass =
   "w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-900 outline-none transition-colors placeholder:text-zinc-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100";
+
+const SCORE_DIRECTIONS: {
+  id: ScoreDirection;
+  label: string;
+  detail: string;
+}[] = [
+  { id: "minimize", label: "Minimize", detail: "Lower score is better" },
+  { id: "maximize", label: "Maximize", detail: "Higher score is better" },
+];
+
+function getEvaluationStatus(
+  evaluation: Pick<
+    ExperimentEvaluation,
+    "scriptPath" | "runCommand" | "scoreDirection"
+  >,
+): EvaluationStatus {
+  const hasScript = Boolean(evaluation.scriptPath.trim());
+  const hasCommand = Boolean(evaluation.runCommand.trim());
+  const hasDirection = Boolean(evaluation.scoreDirection);
+
+  if (hasScript && hasCommand && hasDirection) return "ready";
+  if (hasScript || hasCommand || !hasDirection) return "incomplete";
+  return "missing";
+}
+
+function getMissingEvaluationFields(evaluation: ExperimentEvaluation) {
+  const missing = [];
+  if (!evaluation.scriptPath.trim()) missing.push("eval script path");
+  if (!evaluation.runCommand.trim()) missing.push("run command");
+  if (!evaluation.scoreDirection) missing.push("score direction");
+  return missing;
+}
+
+function normalizeEvaluation(
+  evaluation: ExperimentEvaluation,
+): ExperimentEvaluation {
+  const next = {
+    ...evaluation,
+    scoreName: evaluation.scoreName.trim() || "score",
+  };
+
+  return {
+    ...next,
+    status: getEvaluationStatus(next),
+  };
+}
+
+function evaluationStatusLabel(status: EvaluationStatus) {
+  if (status === "ready") return "Ready";
+  if (status === "incomplete") return "Incomplete";
+  return "Needed";
+}
+
+function directionLabel(direction: ScoreDirection) {
+  return direction === "minimize" ? "Minimize" : "Maximize";
+}
+
+function refreshEvaluationMetrics(
+  metrics: ExperimentMetric[],
+  evaluation: ExperimentEvaluation,
+) {
+  return metrics.map((metric) => {
+    if (metric.label === "Evaluation") {
+      return {
+        ...metric,
+        value: evaluationStatusLabel(evaluation.status),
+        detail: evaluation.mode === "existing" ? "existing script" : "generated script",
+      };
+    }
+
+    if (metric.label === "Score") {
+      return {
+        ...metric,
+        value: evaluation.status === "ready" ? evaluation.scoreName : "-",
+        detail: directionLabel(evaluation.scoreDirection),
+      };
+    }
+
+    return metric;
+  });
+}
+
+function slugify(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
 
 function Overlay({
   onClose,
@@ -110,7 +207,7 @@ function CreateModal({
   const [repo, setRepo] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const canCreate = Boolean(repo.trim() && title.trim() && description.trim());
+  const canCreate = Boolean(repo.trim() && title.trim());
   const sourceLabel = sourceType === "git" ? "Git repository" : "Local path";
   const sourcePlaceholder =
     sourceType === "git"
@@ -195,14 +292,13 @@ function CreateModal({
           </div>
           <div>
             <label className="mb-1.5 block text-sm font-medium text-zinc-700">
-              Objective
+              Goal / context
             </label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
-              placeholder="What should the agent optimize, and by how much?"
-              required
+              placeholder="Optional context for the eval setup or optimization run."
               className={`${inputClass} resize-none`}
             />
           </div>
@@ -296,12 +392,14 @@ function DeleteModal({
 }
 
 const STATUS_TONE: Record<Status, string> = {
+  setup: "bg-zinc-100 text-zinc-700",
   running: "bg-blue-50 text-blue-700",
   "needs-input": "bg-amber-50 text-amber-700 ring-1 ring-amber-200",
   completed: "bg-emerald-50 text-emerald-700",
 };
 
 const TRIAL_TONE = {
+  setup: "bg-zinc-100 text-zinc-600",
   completed: "bg-emerald-50 text-emerald-700",
   "needs-input": "bg-amber-50 text-amber-700",
   running: "bg-blue-50 text-blue-700",
@@ -320,8 +418,10 @@ const CHANGE_TONE: Record<ExperimentChange["status"], string> = {
   planned: "bg-zinc-100 text-zinc-500 ring-zinc-200",
 };
 
-function statusLabel(status: Status | "needs-input") {
-  return status === "needs-input" ? "Needs input" : status;
+function statusLabel(status: Status | ExperimentTrial["status"]) {
+  if (status === "needs-input") return "Needs input";
+  if (status === "setup") return "Setup";
+  return status;
 }
 
 function MetricsList({ metrics }: { metrics: ExperimentMetric[] }) {
@@ -529,6 +629,7 @@ function DetailStatusStrip({ experiment }: { experiment: Experiment }) {
   const latestTrial = experiment.trials[0];
   const trials = experiment.metrics.find((metric) => metric.label === "Trials");
   const spend = experiment.metrics.find((metric) => metric.label === "Spend");
+  const evaluation = experiment.evaluation;
   const statusDetail = experiment.pendingQuestion
     ? "User input required"
     : experiment.timing ?? latestTrial.duration;
@@ -544,9 +645,14 @@ function DetailStatusStrip({ experiment }: { experiment: Experiment }) {
       detail: "Current",
     },
     {
-      label: experiment.targetLabel,
-      value: experiment.targetValue,
-      detail: "Objective",
+      label: "Evaluation",
+      value: evaluationStatusLabel(evaluation.status),
+      detail: evaluation.mode === "existing" ? "Existing script" : "Generated script",
+    },
+    {
+      label: "Score",
+      value: evaluation.scoreName || experiment.targetLabel,
+      detail: directionLabel(evaluation.scoreDirection),
     },
     {
       label: "Latest trial",
@@ -587,10 +693,12 @@ function DetailStatusStrip({ experiment }: { experiment: Experiment }) {
 function DetailTabs({
   active,
   needsInput,
+  evaluationStatus,
   onChange,
 }: {
   active: DetailTabId;
   needsInput: boolean;
+  evaluationStatus: EvaluationStatus;
   onChange: (tab: DetailTabId) => void;
 }) {
   return (
@@ -598,6 +706,7 @@ function DetailTabs({
       {DETAIL_TABS.map((tab) => {
         const selected = active === tab.id;
         const showInput = tab.id === "collab" && needsInput;
+        const showEvaluation = tab.id === "evaluation";
         return (
           <button
             key={tab.id}
@@ -613,6 +722,17 @@ function DetailTabs({
             {showInput && (
               <span className="rounded-full bg-amber-100 px-1.5 text-[11px] font-medium text-amber-700 ring-1 ring-amber-200/80">
                 Input
+              </span>
+            )}
+            {showEvaluation && (
+              <span
+                className={`rounded-full px-1.5 text-[11px] font-medium ring-1 ${
+                  evaluationStatus === "ready"
+                    ? "bg-emerald-50 text-emerald-700 ring-emerald-200/80"
+                    : "bg-amber-50 text-amber-700 ring-amber-200/80"
+                }`}
+              >
+                {evaluationStatusLabel(evaluationStatus)}
               </span>
             )}
           </button>
@@ -799,6 +919,383 @@ function OverviewPanel({
         </section>
 
         <MetricsList metrics={experiment.metrics} />
+      </aside>
+    </section>
+  );
+}
+
+function EvaluationPanel({
+  experiment,
+  onChange,
+  onStartInterview,
+  onSendSetupReply,
+  onApproveGenerated,
+}: {
+  experiment: Experiment;
+  onChange: (
+    experiment: Experiment,
+    patch: Partial<ExperimentEvaluation>,
+  ) => void;
+  onStartInterview: (experiment: Experiment) => void;
+  onSendSetupReply: (experiment: Experiment, text: string) => void;
+  onApproveGenerated: (experiment: Experiment) => void;
+}) {
+  const [reply, setReply] = useState("");
+  const evaluation = experiment.evaluation;
+  const missingFields = getMissingEvaluationFields(evaluation);
+  const isReady = evaluation.status === "ready";
+  const modeOptions: { id: EvaluationMode; label: string; detail: string }[] = [
+    {
+      id: "existing",
+      label: "Use existing script",
+      detail: "Fill the eval contract directly.",
+    },
+    {
+      id: "generated",
+      label: "Generate with agent",
+      detail: "Interview only for eval creation.",
+    },
+  ];
+
+  const sendReply = () => {
+    const trimmed = reply.trim();
+    if (!trimmed) return;
+
+    onSendSetupReply(experiment, trimmed);
+    setReply("");
+  };
+
+  return (
+    <section className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
+      <div className="space-y-5">
+        <section className="rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold tracking-tight text-zinc-900">
+                Evaluation setup
+              </h2>
+              <p className="mt-1 text-sm text-zinc-500">
+                Define the runnable score contract before starting the experiment.
+              </p>
+            </div>
+            <span
+              className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${
+                isReady
+                  ? "bg-emerald-50 text-emerald-700 ring-emerald-200/80"
+                  : "bg-amber-50 text-amber-700 ring-amber-200/80"
+              }`}
+            >
+              {evaluationStatusLabel(evaluation.status)}
+            </span>
+          </div>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {modeOptions.map((option) => {
+              const selected = evaluation.mode === option.id;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => onChange(experiment, { mode: option.id })}
+                  className={`rounded-xl px-3.5 py-3 text-left ring-1 transition-colors ${
+                    selected
+                      ? "bg-blue-50 text-blue-700 ring-blue-200"
+                      : "bg-white text-zinc-700 ring-zinc-200 hover:bg-zinc-50"
+                  }`}
+                >
+                  <span className="block text-sm font-semibold">
+                    {option.label}
+                  </span>
+                  <span
+                    className={`mt-1 block text-xs ${
+                      selected ? "text-blue-600" : "text-zinc-500"
+                    }`}
+                  >
+                    {option.detail}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        {evaluation.mode === "existing" ? (
+          <section className="rounded-2xl bg-zinc-50/70 p-4 ring-1 ring-zinc-950/5">
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-zinc-700">
+                  Eval script path
+                </label>
+                <input
+                  value={evaluation.scriptPath}
+                  onChange={(e) =>
+                    onChange(experiment, { scriptPath: e.target.value })
+                  }
+                  placeholder="/path/to/eval.ts"
+                  className={`${inputClass} font-mono`}
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-zinc-700">
+                  Run command
+                </label>
+                <input
+                  value={evaluation.runCommand}
+                  onChange={(e) =>
+                    onChange(experiment, { runCommand: e.target.value })
+                  }
+                  placeholder="pnpm tsx /path/to/eval.ts"
+                  className={`${inputClass} font-mono`}
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-zinc-700">
+                  Score name
+                </label>
+                <input
+                  value={evaluation.scoreName}
+                  onChange={(e) =>
+                    onChange(experiment, { scoreName: e.target.value })
+                  }
+                  placeholder="score"
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <p className="mb-1.5 block text-sm font-medium text-zinc-700">
+                  Score direction
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {SCORE_DIRECTIONS.map((direction) => {
+                    const selected =
+                      evaluation.scoreDirection === direction.id;
+                    return (
+                      <button
+                        key={direction.id}
+                        type="button"
+                        onClick={() =>
+                          onChange(experiment, {
+                            scoreDirection: direction.id,
+                          })
+                        }
+                        className={`rounded-lg px-3 py-2 text-left ring-1 transition-colors ${
+                          selected
+                            ? "bg-blue-600 text-white ring-blue-600"
+                            : "bg-white text-zinc-700 ring-zinc-200 hover:bg-zinc-50"
+                        }`}
+                      >
+                        <span className="block text-sm font-semibold">
+                          {direction.label}
+                        </span>
+                        <span
+                          className={`mt-0.5 block text-[11px] ${
+                            selected ? "text-blue-100" : "text-zinc-500"
+                          }`}
+                        >
+                          {direction.detail}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {missingFields.length > 0 && (
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-amber-50 px-3.5 py-3 ring-1 ring-amber-200/80">
+                <div>
+                  <p className="text-sm font-medium text-amber-800">
+                    Missing {missingFields.join(", ")}
+                  </p>
+                  <p className="mt-0.5 text-xs text-amber-700">
+                    Fill the template or let the setup agent collect the details.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onStartInterview(experiment)}
+                  className="rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-amber-700 ring-1 ring-amber-200 transition-colors hover:bg-amber-100"
+                >
+                  Interview to fill gaps
+                </button>
+              </div>
+            )}
+          </section>
+        ) : (
+          <section className="flex min-h-[480px] flex-col overflow-hidden rounded-2xl bg-zinc-50/70 ring-1 ring-zinc-950/5">
+            <header className="border-b border-zinc-200/70 bg-white/55 px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-zinc-900">
+                    Eval setup interview
+                  </h3>
+                  <p className="mt-0.5 text-xs text-zinc-500">
+                    Thread{" "}
+                    <span className="font-mono">
+                      {evaluation.evalSetupThreadId ?? "not started"}
+                    </span>
+                  </p>
+                </div>
+                {!evaluation.evalSetupThreadId && (
+                  <button
+                    type="button"
+                    onClick={() => onStartInterview(experiment)}
+                    className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+                  >
+                    Start interview
+                  </button>
+                )}
+              </div>
+            </header>
+
+            <div className="flex-1 space-y-4 overflow-y-auto px-4 py-5">
+              {evaluation.messages.length === 0 ? (
+                <div className="rounded-xl bg-white/70 px-4 py-6 text-center ring-1 ring-zinc-950/5">
+                  <p className="text-sm font-medium text-zinc-900">
+                    No eval setup messages yet.
+                  </p>
+                  <p className="mt-1 text-sm text-zinc-500">
+                    Start the interview or describe what the eval should measure.
+                  </p>
+                </div>
+              ) : (
+                evaluation.messages.map((message) => {
+                  const fromUser = message.author === "user";
+                  return (
+                    <div
+                      key={message.id}
+                      className={`flex ${
+                        fromUser ? "justify-end" : "justify-start"
+                      }`}
+                    >
+                      <div
+                        className={`max-w-[85%] rounded-2xl px-3.5 py-3 text-sm leading-relaxed ${
+                          fromUser
+                            ? "bg-blue-600 text-white shadow-sm"
+                            : "bg-white/70 text-zinc-700 ring-1 ring-zinc-950/5"
+                        }`}
+                      >
+                        <p>{message.text}</p>
+                        <p
+                          className={`mt-2 text-[11px] ${
+                            fromUser ? "text-blue-100" : "text-zinc-400"
+                          }`}
+                        >
+                          {message.time}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                sendReply();
+              }}
+              className="border-t border-zinc-200/70 bg-white/55 p-4"
+            >
+              <textarea
+                value={reply}
+                onChange={(e) => setReply(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    sendReply();
+                  }
+                }}
+                rows={3}
+                placeholder="Tell the setup agent what the eval should measure..."
+                className={`${inputClass} resize-none`}
+              />
+              <div className="mt-2 flex items-center justify-between">
+                <p className="text-xs text-zinc-400">
+                  This thread is separate from runtime Agent Collab
+                </p>
+                <button
+                  type="submit"
+                  disabled={!reply.trim()}
+                  className="rounded-xl bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Send
+                </button>
+              </div>
+            </form>
+          </section>
+        )}
+      </div>
+
+      <aside className="space-y-5">
+        <section className="rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+            Eval contract
+          </p>
+          <div className="mt-3 divide-y divide-zinc-200/70 text-sm">
+            <div className="flex items-center justify-between gap-3 py-2 first:pt-0">
+              <span className="text-zinc-500">Script</span>
+              <span className="truncate font-mono font-medium text-zinc-900">
+                {evaluation.scriptPath || "Not set"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3 py-2">
+              <span className="text-zinc-500">Command</span>
+              <span className="truncate font-mono font-medium text-zinc-900">
+                {evaluation.runCommand || "Not set"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3 py-2">
+              <span className="text-zinc-500">Score</span>
+              <span className="font-medium text-zinc-900">
+                {evaluation.scoreName || "score"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3 py-2 last:pb-0">
+              <span className="text-zinc-500">Direction</span>
+              <span className="font-medium text-zinc-900">
+                {directionLabel(evaluation.scoreDirection)}
+              </span>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-2xl bg-zinc-50/70 p-4 ring-1 ring-zinc-950/5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+            Contract behavior
+          </p>
+          <ul className="mt-3 space-y-2 text-sm text-zinc-500">
+            <li>Command exits 0 when the eval runs successfully.</li>
+            <li>Stdout prints one numeric score.</li>
+            <li>Non-zero exit marks the trial invalid.</li>
+            <li>Any improvement in the chosen direction counts.</li>
+          </ul>
+        </section>
+
+        {evaluation.mode === "generated" && (
+          <section className="rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
+            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+              Generated script
+            </p>
+            <p className="mt-3 text-sm leading-relaxed text-zinc-500">
+              Approving the generated eval stores the script path and command on
+              this experiment.
+            </p>
+            <button
+              type="button"
+              onClick={() => onApproveGenerated(experiment)}
+              disabled={
+                !evaluation.evalSetupThreadId ||
+                evaluation.generatedScriptApproved
+              }
+              className="mt-4 w-full rounded-xl bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {evaluation.generatedScriptApproved
+                ? "Generated eval approved"
+                : "Approve generated eval"}
+            </button>
+          </section>
+        )}
       </aside>
     </section>
   );
@@ -1082,22 +1579,39 @@ function AgentCollab({
 function ExperimentDetail({
   experiment,
   onBack,
+  onStart,
   onApprove,
   onAnswer,
   onSendReply,
+  onUpdateEvaluation,
+  onStartEvalInterview,
+  onSendEvalSetupReply,
+  onApproveGeneratedEvaluation,
   onNotify,
 }: {
   experiment: Experiment;
   onBack: () => void;
+  onStart: (experiment: Experiment) => void;
   onApprove: (experiment: Experiment) => void;
   onAnswer: (experiment: Experiment, answer: string) => void;
   onSendReply: (experiment: Experiment, text: string) => void;
+  onUpdateEvaluation: (
+    experiment: Experiment,
+    patch: Partial<ExperimentEvaluation>,
+  ) => void;
+  onStartEvalInterview: (experiment: Experiment) => void;
+  onSendEvalSetupReply: (experiment: Experiment, text: string) => void;
+  onApproveGeneratedEvaluation: (experiment: Experiment) => void;
   onNotify: (message: string) => void;
 }) {
-  const [detailTab, setDetailTab] = useState<DetailTabId>("overview");
+  const [detailTab, setDetailTab] = useState<DetailTabId>(
+    experiment.status === "setup" ? "evaluation" : "overview",
+  );
   const metricName = experiment.metricLabel.replace(/^Current\s+/i, "");
   const canApprove = experiment.status === "needs-input";
   const needsInput = canApprove && Boolean(experiment.pendingQuestion);
+  const canStart =
+    experiment.status === "setup" && experiment.evaluation.status === "ready";
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onBack();
@@ -1107,6 +1621,16 @@ function ExperimentDetail({
 
   const activePanel = (() => {
     switch (detailTab) {
+      case "evaluation":
+        return (
+          <EvaluationPanel
+            experiment={experiment}
+            onChange={onUpdateEvaluation}
+            onStartInterview={onStartEvalInterview}
+            onSendSetupReply={onSendEvalSetupReply}
+            onApproveGenerated={onApproveGeneratedEvaluation}
+          />
+        );
       case "progress":
         return <ProgressPanel steps={experiment.progressSteps} />;
       case "collab":
@@ -1185,7 +1709,22 @@ function ExperimentDetail({
             </div>
 
             <div className="flex shrink-0 items-center gap-2">
-              {needsInput ? (
+              {experiment.status === "setup" ? (
+                <button
+                  type="button"
+                  onClick={() => onStart(experiment)}
+                  disabled={!canStart}
+                  title={
+                    canStart
+                      ? "Start experiment"
+                      : "Complete evaluation setup first"
+                  }
+                  className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Start experiment
+                  <ArrowRightIcon className="h-4 w-4" />
+                </button>
+              ) : needsInput ? (
                 <button
                   type="button"
                   onClick={() => setDetailTab("collab")}
@@ -1232,6 +1771,7 @@ function ExperimentDetail({
         <DetailTabs
           active={detailTab}
           needsInput={needsInput}
+          evaluationStatus={experiment.evaluation.status}
           onChange={setDetailTab}
         />
 
@@ -1298,49 +1838,61 @@ export default function Dashboard() {
     description: string;
   }) => {
     const title = draft.title.trim();
+    const context =
+      draft.description.trim() ||
+      "Evaluation setup required before optimization can start.";
     const base = {
-      id: `${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${items.length}`,
+      id: `${slugify(title)}-${items.length}`,
       repo: draft.repo.trim(),
       title,
-      description: draft.description.trim(),
+      description: context,
     };
-    const progress = "0%";
+    const progress = "Not started";
     const detail = {
-      objective: base.description,
-      targetLabel: "Target",
-      targetValue: "100%",
-      targetMetric: 100,
+      objective: context,
+      targetLabel: "Direction",
+      targetValue: "Not set",
+      targetMetric: 0,
+      evaluation: {
+        mode: "existing",
+        scriptPath: "",
+        scoreDirection: "minimize",
+        runCommand: "",
+        scoreName: "score",
+        status: "missing",
+        messages: [],
+      },
       metrics: [
-        { label: "Progress", value: progress, detail: "demo session" },
-        { label: "Target", value: "100%", detail: "objective" },
-        { label: "Best trial", value: progress, detail: "created now" },
+        { label: "Evaluation", value: "Needed", detail: "setup required" },
+        { label: "Score", value: "-", detail: "not measured" },
+        { label: "Best trial", value: "-", detail: "not started" },
         { label: "Error rate", value: "-", detail: "not measured" },
-        { label: "Trials", value: "1", detail: "created now" },
+        { label: "Trials", value: "0", detail: "not started" },
         { label: "Spend", value: "$0.00", detail: "0 tokens" },
       ],
-      trend: [{ label: "T-01", value: 0 }],
+      trend: [{ label: "Setup", value: 0 }],
       trials: [
         {
-          id: "T-01",
-          title: "Experiment created",
-          summary: base.description,
+          id: "Setup",
+          title: "Evaluation setup",
+          summary: "Provide an eval script contract before starting the run.",
           metricValue: progress,
           duration: "Just now",
-          status: "running",
+          status: "setup",
         },
       ],
       progressSteps: [
         {
-          id: "workspace-created",
-          title: "Workspace created",
-          detail: base.description,
+          id: "evaluation-setup",
+          title: "Configure evaluation",
+          detail: "Provide an existing eval script or generate one with the setup interview.",
           status: "active",
           time: "Just now",
         },
         {
-          id: "first-measurement",
-          title: "Collect first measurement",
-          detail: "Run the first trial and record the baseline outcome.",
+          id: "baseline-measurement",
+          title: "Collect baseline",
+          detail: "Run the eval script and record the first score.",
           status: "queued",
           time: "Next",
         },
@@ -1349,7 +1901,7 @@ export default function Dashboard() {
         {
           id: "initial-workspace",
           path: base.repo,
-          summary: "Experiment workspace initialized for the requested objective.",
+          summary: "Experiment workspace waiting for evaluation setup.",
           status: "planned",
         },
       ],
@@ -1357,7 +1909,7 @@ export default function Dashboard() {
         {
           id: "created-message",
           author: "agent",
-          text: "Workspace created. I will report trials and questions here as the optimization runs.",
+          text: "Workspace created. Runtime collaboration will start after the evaluation contract is ready.",
           time: "Just now",
         },
       ],
@@ -1367,6 +1919,7 @@ export default function Dashboard() {
       | "targetLabel"
       | "targetValue"
       | "targetMetric"
+      | "evaluation"
       | "metrics"
       | "trend"
       | "trials"
@@ -1378,10 +1931,10 @@ export default function Dashboard() {
     const experiment: Experiment = {
       ...base,
       ...detail,
-      status: "running",
-      metricLabel: "Progress",
-      metricValue: "0%",
-      timing: "just started",
+      status: "setup",
+      metricLabel: "Evaluation",
+      metricValue: "needed",
+      timing: "setup",
     };
 
     setItems((prev) => [experiment, ...prev]);
@@ -1390,6 +1943,270 @@ export default function Dashboard() {
     setSelectedId(experiment.id);
     setShowCreate(false);
     notify(`Created "${title}"`);
+  };
+
+  const handleUpdateEvaluation = (
+    experiment: Experiment,
+    patch: Partial<ExperimentEvaluation>,
+  ) => {
+    setItems((prev) =>
+      prev.map((e) => {
+        if (e.id !== experiment.id) return e;
+
+        const merged = {
+          ...e.evaluation,
+          ...patch,
+        };
+        const nextEvaluation = normalizeEvaluation(
+          patch.mode === "existing"
+            ? {
+                ...merged,
+                evalSetupThreadId: undefined,
+                generatedScriptApproved: undefined,
+                messages: [],
+              }
+            : merged,
+        );
+
+        return {
+          ...e,
+          evaluation: nextEvaluation,
+          metricValue:
+            e.status === "setup"
+              ? nextEvaluation.status === "ready"
+                ? "ready"
+                : "needed"
+              : e.metricValue,
+          targetValue: directionLabel(nextEvaluation.scoreDirection),
+          metrics: refreshEvaluationMetrics(e.metrics, nextEvaluation),
+        };
+      }),
+    );
+  };
+
+  const handleStartEvalInterview = (experiment: Experiment) => {
+    const threadId =
+      experiment.evaluation.evalSetupThreadId ?? `eval-setup-${Date.now()}`;
+
+    setItems((prev) =>
+      prev.map((e) => {
+        if (e.id !== experiment.id) return e;
+
+        const messages =
+          e.evaluation.messages.length > 0
+            ? e.evaluation.messages
+            : [
+                {
+                  id: `eval-agent-${Date.now()}`,
+                  author: "agent" as const,
+                  text: "I will help create the eval script. What should the score measure, and what output should count as better?",
+                  time: "Just now",
+                },
+              ];
+        const nextEvaluation = normalizeEvaluation({
+          ...e.evaluation,
+          mode: "generated",
+          evalSetupThreadId: threadId,
+          messages,
+        });
+
+        return {
+          ...e,
+          evaluation: nextEvaluation,
+          metrics: refreshEvaluationMetrics(e.metrics, nextEvaluation),
+        };
+      }),
+    );
+    notify("Eval setup interview started");
+  };
+
+  const handleEvalSetupReply = (experiment: Experiment, text: string) => {
+    const threadId =
+      experiment.evaluation.evalSetupThreadId ?? `eval-setup-${Date.now()}`;
+
+    setItems((prev) =>
+      prev.map((e) => {
+        if (e.id !== experiment.id) return e;
+
+        const opening =
+          e.evaluation.messages.length === 0
+            ? [
+                {
+                  id: `eval-agent-${Date.now()}`,
+                  author: "agent" as const,
+                  text: "I will keep this interview scoped to creating the eval script.",
+                  time: "Just now",
+                },
+              ]
+            : [];
+        const nextEvaluation = normalizeEvaluation({
+          ...e.evaluation,
+          mode: "generated",
+          evalSetupThreadId: threadId,
+          messages: [
+            ...opening,
+            ...e.evaluation.messages,
+            {
+              id: `eval-user-${Date.now()}`,
+              author: "user",
+              text,
+              time: "Just now",
+            },
+            {
+              id: `eval-agent-reply-${Date.now()}`,
+              author: "agent",
+              text: "Captured. I will use that to draft the eval script contract for this repository.",
+              time: "Just now",
+            },
+          ],
+        });
+
+        return {
+          ...e,
+          evaluation: nextEvaluation,
+          metrics: refreshEvaluationMetrics(e.metrics, nextEvaluation),
+        };
+      }),
+    );
+    notify("Eval setup reply sent");
+  };
+
+  const handleApproveGeneratedEvaluation = (experiment: Experiment) => {
+    if (!experiment.evaluation.evalSetupThreadId) {
+      notify("Start the eval setup interview first");
+      return;
+    }
+
+    setItems((prev) =>
+      prev.map((e) => {
+        if (e.id !== experiment.id) return e;
+
+        const scriptPath =
+          e.evaluation.scriptPath.trim() ||
+          `.optimizer/evals/${slugify(e.title)}.eval.ts`;
+        const nextEvaluation = normalizeEvaluation({
+          ...e.evaluation,
+          mode: "generated",
+          scriptPath,
+          runCommand:
+            e.evaluation.runCommand.trim() || `pnpm tsx ${scriptPath}`,
+          scoreName: e.evaluation.scoreName.trim() || "score",
+          generatedScriptApproved: true,
+          messages: [
+            ...e.evaluation.messages,
+            {
+              id: `eval-approved-${Date.now()}`,
+              author: "agent",
+              text: `Generated eval approved at ${scriptPath}. The runtime agent can now use this eval contract.`,
+              time: "Just now",
+            },
+          ],
+        });
+
+        return {
+          ...e,
+          evaluation: nextEvaluation,
+          metricValue:
+            e.status === "setup"
+              ? nextEvaluation.status === "ready"
+                ? "ready"
+                : "needed"
+              : e.metricValue,
+          targetValue: directionLabel(nextEvaluation.scoreDirection),
+          metrics: refreshEvaluationMetrics(e.metrics, nextEvaluation),
+        };
+      }),
+    );
+    notify("Generated eval approved");
+  };
+
+  const handleStartExperiment = (experiment: Experiment) => {
+    if (experiment.evaluation.status !== "ready") {
+      notify("Complete evaluation setup before starting");
+      return;
+    }
+
+    setItems((prev) =>
+      prev.map((e) => {
+        if (e.id !== experiment.id) return e;
+
+        const evaluation = normalizeEvaluation(e.evaluation);
+        const metricLabel = `Current ${evaluation.scoreName}`;
+        const direction = directionLabel(evaluation.scoreDirection);
+        const runtimeInstruction = [
+          `Repository: ${e.repo}`,
+          `Eval script: ${evaluation.scriptPath}`,
+          `Run command: ${evaluation.runCommand}`,
+          `Score: ${evaluation.scoreName}`,
+          `Direction: ${evaluation.scoreDirection}`,
+        ].join("\n");
+
+        return {
+          ...e,
+          status: "running",
+          metricLabel,
+          metricValue: "baseline pending",
+          timing: "just started",
+          targetLabel: "Direction",
+          targetValue: direction,
+          evaluation,
+          metrics: [
+            {
+              label: metricLabel,
+              value: "baseline pending",
+              detail: "first eval queued",
+            },
+            { label: "Direction", value: direction, detail: "score objective" },
+            { label: "Best trial", value: "-", detail: "not measured" },
+            { label: "Error rate", value: "-", detail: "not measured" },
+            { label: "Trials", value: "1", detail: "just started" },
+            { label: "Spend", value: "$0.00", detail: "0 tokens" },
+          ],
+          trials: [
+            {
+              id: "T-01",
+              title: "Baseline evaluation",
+              summary: `Run ${evaluation.runCommand} and record ${evaluation.scoreName}.`,
+              metricValue: "pending",
+              duration: "Just now",
+              status: "running",
+            },
+            ...e.trials.filter((trial) => trial.id !== "Setup"),
+          ],
+          progressSteps: e.progressSteps.map((step) =>
+            step.id === "evaluation-setup"
+              ? {
+                  ...step,
+                  status: "completed",
+                  detail: "Evaluation contract is ready.",
+                  time: "Just now",
+                }
+              : step.id === "baseline-measurement"
+                ? { ...step, status: "active", time: "Now" }
+                : step,
+          ),
+          changes: [
+            {
+              id: "eval-contract",
+              path: evaluation.scriptPath,
+              summary: `Use ${evaluation.scoreName} eval contract for optimization.`,
+              status: "planned",
+            },
+            ...e.changes.filter((change) => change.id !== "eval-contract"),
+          ],
+          agentMessages: [
+            ...e.agentMessages,
+            {
+              id: `start-${Date.now()}`,
+              author: "agent",
+              text: `Starting optimization with this eval contract:\n${runtimeInstruction}`,
+              time: "Just now",
+            },
+          ],
+        };
+      }),
+    );
+    notify(`Started "${experiment.title}"`);
   };
 
   const handleApprove = (experiment: Experiment) => {
@@ -1585,7 +2402,13 @@ export default function Dashboard() {
             <div className="mt-5 flex items-center gap-6 border-b border-zinc-200">
               {TABS.map((t) => {
                 const active = tab === t.id;
-                const count = t.id === "needs-input" ? needsInputCount : 0;
+                const count =
+                  t.id === "setup"
+                    ? items.filter((experiment) => experiment.status === "setup")
+                        .length
+                    : t.id === "needs-input"
+                      ? needsInputCount
+                      : 0;
                 return (
                   <button
                     key={t.id}
@@ -1643,9 +2466,14 @@ export default function Dashboard() {
           key={selected.id}
           experiment={selected}
           onBack={() => setSelectedId(null)}
+          onStart={handleStartExperiment}
           onApprove={handleApprove}
           onAnswer={handleAnswer}
           onSendReply={handleReply}
+          onUpdateEvaluation={handleUpdateEvaluation}
+          onStartEvalInterview={handleStartEvalInterview}
+          onSendEvalSetupReply={handleEvalSetupReply}
+          onApproveGeneratedEvaluation={handleApproveGeneratedEvaluation}
           onNotify={notify}
         />
       )}

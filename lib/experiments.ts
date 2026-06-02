@@ -1,4 +1,7 @@
-export type Status = "running" | "needs-input" | "completed";
+export type Status = "setup" | "running" | "needs-input" | "completed";
+export type ScoreDirection = "minimize" | "maximize";
+export type EvaluationMode = "existing" | "generated";
+export type EvaluationStatus = "missing" | "incomplete" | "ready";
 
 export type ExperimentMetric = {
   label: string;
@@ -6,7 +9,7 @@ export type ExperimentMetric = {
   detail: string;
 };
 
-export type TrialStatus = "completed" | "needs-input" | "running";
+export type TrialStatus = "setup" | "completed" | "needs-input" | "running";
 
 export type ExperimentTrial = {
   id: string;
@@ -27,6 +30,18 @@ export type AgentMessage = {
   author: "agent" | "user";
   text: string;
   time: string;
+};
+
+export type ExperimentEvaluation = {
+  mode: EvaluationMode;
+  scriptPath: string;
+  scoreDirection: ScoreDirection;
+  runCommand: string;
+  scoreName: string;
+  status: EvaluationStatus;
+  evalSetupThreadId?: string;
+  generatedScriptApproved?: boolean;
+  messages: AgentMessage[];
 };
 
 export type ProgressStep = {
@@ -60,6 +75,7 @@ export type Experiment = {
   targetLabel: string;
   targetValue: string;
   targetMetric: number;
+  evaluation: ExperimentEvaluation;
   metrics: ExperimentMetric[];
   trend: TrendPoint[];
   trials: ExperimentTrial[];
@@ -88,6 +104,15 @@ export const experiments: Experiment[] = [
     targetLabel: "Target p95",
     targetValue: "< 50 ms",
     targetMetric: 50,
+    evaluation: {
+      mode: "existing",
+      scriptPath: "scripts/eval-latency.ts",
+      scoreDirection: "minimize",
+      runCommand: "pnpm tsx scripts/eval-latency.ts",
+      scoreName: "p95_ms",
+      status: "ready",
+      messages: [],
+    },
     metrics: [
       { label: "Current p95", value: "62 ms", detail: "latest trial" },
       { label: "Target", value: "< 50 ms", detail: "objective" },

@@ -15,6 +15,20 @@ const trialThreadOptions = {
   "sandboxMode" | "approvalPolicy" | "networkAccessEnabled"
 >;
 
+function startInstruction(input: StartTrialInput) {
+  return [
+    input.instruction,
+    "",
+    "Evaluation contract:",
+    `- Eval script: ${input.evaluation.scriptPath}`,
+    `- Run command: ${input.evaluation.runCommand}`,
+    `- Score name: ${input.evaluation.scoreName}`,
+    `- Score direction: ${input.evaluation.scoreDirection}`,
+    "- Treat a non-zero eval exit as an invalid trial.",
+    "- Any score improvement in the selected direction is useful.",
+  ].join("\n");
+}
+
 export class CodexTrialAgent {
   private readonly codex = new Codex();
 
@@ -23,7 +37,7 @@ export class CodexTrialAgent {
       ...trialThreadOptions,
       workingDirectory: input.repoPath,
     });
-    const turn = await thread.run(input.instruction);
+    const turn = await thread.run(startInstruction(input));
     const trialThreadId = thread.id;
 
     if (!trialThreadId) {
