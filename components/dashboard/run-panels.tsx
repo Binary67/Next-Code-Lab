@@ -327,8 +327,8 @@ export function RunPanel({
   };
 
   return (
-    <section className="grid h-full min-h-[34rem] gap-5 xl:grid-cols-[22rem_minmax(0,1fr)]">
-      <section className="rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
+    <section className="grid min-h-[34rem] gap-5 xl:h-full xl:min-h-0 xl:grid-cols-[22rem_minmax(0,1fr)] xl:overflow-hidden">
+      <section className="flex min-h-0 flex-col rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
         <h2 className="text-base font-semibold tracking-tight text-zinc-900">
           Trial history
         </h2>
@@ -344,7 +344,7 @@ export function RunPanel({
             />
           </div>
         ) : (
-          <div className="mt-5 space-y-2">
+          <div className="mt-5 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
             {experiment.trials.map((trial) => {
               const selected = selectedTrial?.id === trial.id;
               const evalProgress = evalProgressLabel(
@@ -406,7 +406,7 @@ export function RunPanel({
         )}
       </section>
 
-      <section className="flex min-w-0 flex-col rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
+      <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
         {selectedTrial ? (
           <>
             <div className="flex flex-wrap items-start justify-between gap-3">
