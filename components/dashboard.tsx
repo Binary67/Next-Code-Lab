@@ -287,19 +287,25 @@ function statusLabel(status: Status | "needs-input") {
 function MetricsList({ metrics }: { metrics: ExperimentMetric[] }) {
   return (
     <section>
-      <h2 className="text-sm font-semibold text-zinc-900">Metrics</h2>
-      <div className="mt-3 grid grid-cols-2 gap-2">
+      <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+        Metrics
+      </h2>
+      <div className="mt-3 divide-y divide-zinc-200/70 overflow-hidden rounded-2xl bg-white/55 ring-1 ring-zinc-950/5">
         {metrics.map((metric) => (
           <div
             key={metric.label}
-            className="rounded-lg border border-zinc-200 bg-white px-3 py-3"
+            className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3"
           >
-            <p className="text-xs font-medium text-zinc-400">{metric.label}</p>
-            <p className="mt-1 text-lg font-semibold tracking-tight text-zinc-900">
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-zinc-500">
+                {metric.label}
+              </p>
+              <p className="mt-0.5 truncate text-xs text-zinc-400">
+                {metric.detail}
+              </p>
+            </div>
+            <p className="text-right text-base font-semibold tracking-tight text-zinc-900">
               {metric.value}
-            </p>
-            <p className="mt-0.5 truncate text-xs text-zinc-500">
-              {metric.detail}
             </p>
           </div>
         ))}
@@ -342,7 +348,7 @@ function TrendChart({
       viewBox={`0 0 ${width} ${height}`}
       role="img"
       aria-label="Optimization trend by trial"
-      className="mt-4 aspect-[16/7] max-h-[300px] w-full overflow-visible"
+      className="mt-4 aspect-[16/7] max-h-[280px] w-full overflow-visible"
     >
       {[0, 1, 2, 3].map((tick) => {
         const y = padding.top + (ySpan / 3) * tick;
@@ -354,6 +360,7 @@ function TrendChart({
             y1={y}
             y2={y}
             stroke="#e4e4e7"
+            opacity="0.72"
             strokeWidth="1"
           />
         );
@@ -364,8 +371,9 @@ function TrendChart({
         y1={targetY}
         y2={targetY}
         stroke="#d97706"
+        opacity="0.72"
         strokeDasharray="4 4"
-        strokeWidth="1.4"
+        strokeWidth="1.2"
       />
       <text
         x={width - padding.right}
@@ -379,10 +387,10 @@ function TrendChart({
       <polyline
         points={line}
         fill="none"
-        stroke="#0f5fb8"
+        stroke="#0a84ff"
         strokeLinecap="round"
         strokeLinejoin="round"
-        strokeWidth="4"
+        strokeWidth="2.6"
         className="animate-draw"
       />
       {points.map((point, index) => (
@@ -390,10 +398,10 @@ function TrendChart({
           <circle
             cx={xFor(index)}
             cy={yFor(point.value)}
-            r={index === points.length - 1 ? 5 : 3.5}
-            fill={index === points.length - 1 ? "#0f5fb8" : "#ffffff"}
-            stroke="#0f5fb8"
-            strokeWidth="2"
+            r={index === points.length - 1 ? 4.5 : 3}
+            fill={index === points.length - 1 ? "#0a84ff" : "#ffffff"}
+            stroke="#0a84ff"
+            strokeWidth="1.6"
           />
           {(index === 0 ||
             index === points.length - 1 ||
@@ -411,8 +419,8 @@ function TrendChart({
       ))}
       <defs>
         <linearGradient id="trend-area" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor="#bfdbfe" />
-          <stop offset="100%" stopColor="#ffffff" />
+          <stop offset="0%" stopColor="#dbeafe" />
+          <stop offset="100%" stopColor="#ffffff" stopOpacity="0.15" />
         </linearGradient>
       </defs>
     </svg>
@@ -428,16 +436,18 @@ function TrialsList({
 }) {
   return (
     <section>
-      <h2 className="text-sm font-semibold text-zinc-900">Recent trials</h2>
-      <p className="mt-0.5 text-xs text-zinc-500">
+      <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+        Recent trials
+      </h2>
+      <p className="mt-1 text-xs text-zinc-500">
         Latest attempts and measured outcomes.
       </p>
 
-      <div className="mt-3 space-y-2">
+      <div className="mt-3 divide-y divide-zinc-200/70 overflow-hidden rounded-2xl bg-white/55 ring-1 ring-zinc-950/5">
         {trials.map((trial) => (
           <article
             key={trial.id}
-            className="rounded-lg border border-zinc-200 bg-white px-3 py-3"
+            className="px-4 py-3"
           >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
@@ -446,7 +456,7 @@ function TrialsList({
                     {trial.id}
                   </p>
                   <span
-                    className={`rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ${
+                    className={`rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ring-1 ring-inset ring-black/5 ${
                       TRIAL_TONE[trial.status]
                     }`}
                   >
@@ -478,87 +488,41 @@ function TrialsList({
 function ExperimentSummaryPanel({
   experiment,
   metricName,
-  onBack,
-  onApprove,
   onNotify,
 }: {
   experiment: Experiment;
   metricName: string;
-  onBack: () => void;
-  onApprove: (experiment: Experiment) => void;
   onNotify: (message: string) => void;
 }) {
   return (
-    <aside className="flex min-w-0 flex-col overflow-y-auto border-r border-zinc-200 bg-zinc-50/70 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      <header className="border-b border-zinc-200 bg-white px-5 py-4">
-        <button
-          type="button"
-          onClick={onBack}
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-zinc-500 transition-colors hover:text-zinc-900"
-        >
-          <ArrowRightIcon className="h-4 w-4 rotate-180" />
-          Experiments
-        </button>
-
-        <div className="mt-5">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-md bg-zinc-100 px-2 py-0.5 font-mono text-xs text-zinc-500">
-              {experiment.repo}
-            </span>
-            <span
-              className={`rounded-full px-2.5 py-1 text-xs font-medium capitalize ${
-                STATUS_TONE[experiment.status]
-              }`}
-            >
-              {statusLabel(experiment.status)}
-            </span>
-          </div>
-          <h1 className="mt-3 text-xl font-semibold tracking-tight text-zinc-900">
-            {experiment.title}
-          </h1>
-          <p className="mt-2 text-sm leading-relaxed text-zinc-500">
-            {experiment.objective}
-          </p>
+    <aside className="flex min-w-0 flex-col gap-6 border-zinc-200/70 bg-zinc-50/55 p-5 lg:overflow-y-auto lg:border-r [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <section>
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+          Run controls
+        </h2>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => onNotify(`${experiment.title} paused`)}
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-white/65 px-3 py-2 text-sm font-medium text-zinc-700 ring-1 ring-zinc-950/5 transition-colors hover:bg-white"
+          >
+            <PauseIcon className="h-4 w-4" />
+            Pause
+          </button>
+          <button
+            type="button"
+            onClick={() => onNotify(`${experiment.title} stopped`)}
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 ring-1 ring-rose-200/70 transition-colors hover:bg-rose-100"
+          >
+            <CloseIcon className="h-4 w-4" />
+            Stop
+          </button>
         </div>
-      </header>
+      </section>
 
-      <div className="space-y-6 px-5 py-5">
-        <section>
-          <h2 className="text-sm font-semibold text-zinc-900">Run controls</h2>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => onNotify(`${experiment.title} paused`)}
-              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50"
-            >
-              <PauseIcon className="h-4 w-4" />
-              Pause
-            </button>
-            <button
-              type="button"
-              onClick={() => onNotify(`${experiment.title} stopped`)}
-              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 transition-colors hover:bg-rose-100"
-            >
-              <CloseIcon className="h-4 w-4" />
-              Stop
-            </button>
-            {experiment.status === "needs-input" && (
-              <button
-                type="button"
-                onClick={() => onApprove(experiment)}
-                className="col-span-2 inline-flex items-center justify-center gap-1.5 rounded-lg bg-blue-700 px-3.5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-800"
-              >
-                Approve &amp; resume
-                <ArrowRightIcon className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-        </section>
+      <MetricsList metrics={experiment.metrics} />
 
-        <MetricsList metrics={experiment.metrics} />
-
-        <TrialsList trials={experiment.trials} metricName={metricName} />
-      </div>
+      <TrialsList trials={experiment.trials} metricName={metricName} />
     </aside>
   );
 }
@@ -578,104 +542,96 @@ function OptimizationPanel({
   const activeTrial = experiment.trials[0];
 
   return (
-    <section className="flex min-w-0 flex-col overflow-y-auto bg-white">
-      <header className="border-b border-zinc-200 px-6 py-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold tracking-tight text-zinc-900">
-              Graph / Active Run
-            </h2>
-            <p className="mt-1 text-sm text-zinc-500">
-              Track optimization direction and the latest trial state.
-            </p>
-          </div>
-          <div className="rounded-lg bg-blue-50 px-3 py-2 text-right">
-            <p className="text-xs font-medium text-blue-700">
-              Current {experiment.metricValue}
-            </p>
-            <p
-              className={`mt-0.5 text-xs ${
-                movement > 0 ? "text-amber-600" : "text-emerald-600"
-              }`}
-            >
-              {movement > 0 ? "+" : ""}
-              {movement}
-              {movementUnit} from previous
-            </p>
-          </div>
+    <section className="flex min-w-0 flex-col bg-white/60 p-5 lg:overflow-y-auto">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold tracking-tight text-zinc-900">
+            Optimization
+          </h2>
+          <p className="mt-1 text-sm text-zinc-500">
+            Trend direction and the latest trial state.
+          </p>
         </div>
-      </header>
+        <div className="rounded-2xl bg-blue-50/80 px-3 py-2 text-right ring-1 ring-blue-100">
+          <p className="text-xs font-medium text-blue-700">
+            Current {experiment.metricValue}
+          </p>
+          <p
+            className={`mt-0.5 text-xs ${
+              movement > 0 ? "text-amber-600" : "text-emerald-600"
+            }`}
+          >
+            {movement > 0 ? "+" : ""}
+            {movement}
+            {movementUnit} from previous
+          </p>
+        </div>
+      </div>
 
-      <div className="px-5 py-5">
-        <div className="w-full">
-          <section className="rounded-xl border border-zinc-200 bg-white p-5">
-            <div>
-              <h3 className="text-sm font-semibold text-zinc-900">
-                Optimization trend
-              </h3>
-              <p className="mt-0.5 text-xs text-zinc-500">
-                Measured across completed trials.
+      <section className="mt-5 rounded-2xl bg-zinc-50/70 p-4 ring-1 ring-zinc-950/5">
+        <div>
+          <h3 className="text-sm font-semibold text-zinc-900">
+            Optimization trend
+          </h3>
+          <p className="mt-0.5 text-xs text-zinc-500">
+            Measured across completed trials.
+          </p>
+        </div>
+        <TrendChart
+          points={experiment.trend}
+          target={experiment.targetMetric}
+          targetLabel={`${experiment.targetLabel}: ${experiment.targetValue}`}
+        />
+      </section>
+
+      <div className="mt-4 grid gap-3 xl:grid-cols-2">
+        <section className="rounded-2xl bg-white/55 p-4 ring-1 ring-zinc-950/5">
+          <h3 className="text-sm font-semibold text-zinc-900">Active run</h3>
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="font-mono text-xs font-semibold text-zinc-900">
+                {activeTrial.id}
+              </p>
+              <p className="mt-1 truncate text-sm font-medium text-zinc-900">
+                {activeTrial.title}
               </p>
             </div>
-            <TrendChart
-              points={experiment.trend}
-              target={experiment.targetMetric}
-              targetLabel={`${experiment.targetLabel}: ${experiment.targetValue}`}
-            />
-          </section>
-
-          <div className="mt-5 grid gap-4 xl:grid-cols-2">
-            <section className="rounded-xl border border-zinc-200 bg-white p-5">
-              <h3 className="text-sm font-semibold text-zinc-900">Active run</h3>
-              <div className="mt-3 flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="font-mono text-xs font-semibold text-zinc-900">
-                    {activeTrial.id}
-                  </p>
-                  <p className="mt-1 truncate text-sm font-medium text-zinc-900">
-                    {activeTrial.title}
-                  </p>
-                </div>
-                <span
-                  className={`rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ${
-                    TRIAL_TONE[activeTrial.status]
-                  }`}
-                >
-                  {statusLabel(activeTrial.status)}
-                </span>
-              </div>
-              <p className="mt-3 text-sm leading-relaxed text-zinc-500">
-                {activeTrial.summary}
-              </p>
-            </section>
-
-            <section className="rounded-xl border border-zinc-200 bg-white p-5">
-              <h3 className="text-sm font-semibold text-zinc-900">
-                Measurement
-              </h3>
-              <div className="mt-3 space-y-2 text-sm">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-zinc-500">{metricName}</span>
-                  <span className="font-semibold text-zinc-900">
-                    {activeTrial.metricValue}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-zinc-500">{experiment.targetLabel}</span>
-                  <span className="font-semibold text-zinc-900">
-                    {experiment.targetValue}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-zinc-500">Duration</span>
-                  <span className="font-semibold text-zinc-900">
-                    {activeTrial.duration}
-                  </span>
-                </div>
-              </div>
-            </section>
+            <span
+              className={`rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ring-1 ring-inset ring-black/5 ${
+                TRIAL_TONE[activeTrial.status]
+              }`}
+            >
+              {statusLabel(activeTrial.status)}
+            </span>
           </div>
-        </div>
+          <p className="mt-3 text-sm leading-relaxed text-zinc-500">
+            {activeTrial.summary}
+          </p>
+        </section>
+
+        <section className="rounded-2xl bg-white/55 p-4 ring-1 ring-zinc-950/5">
+          <h3 className="text-sm font-semibold text-zinc-900">Measurement</h3>
+          <div className="mt-3 divide-y divide-zinc-200/70 text-sm">
+            <div className="flex items-center justify-between gap-3 py-2 first:pt-0">
+              <span className="text-zinc-500">{metricName}</span>
+              <span className="font-semibold text-zinc-900">
+                {activeTrial.metricValue}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3 py-2">
+              <span className="text-zinc-500">{experiment.targetLabel}</span>
+              <span className="font-semibold text-zinc-900">
+                {experiment.targetValue}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3 py-2 last:pb-0">
+              <span className="text-zinc-500">Duration</span>
+              <span className="font-semibold text-zinc-900">
+                {activeTrial.duration}
+              </span>
+            </div>
+          </div>
+        </section>
       </div>
     </section>
   );
@@ -710,8 +666,8 @@ function AgentCollab({
   };
 
   return (
-    <aside className="flex min-w-0 flex-col border-l border-zinc-200 bg-zinc-50/70">
-      <header className="border-b border-zinc-200 bg-white px-5 py-4">
+    <aside className="flex min-w-0 flex-col border-zinc-200/70 bg-zinc-50/55 lg:col-span-2 lg:border-t xl:col-span-1 xl:border-l xl:border-t-0">
+      <header className="border-b border-zinc-200/70 bg-white/40 px-5 py-4">
         <div className="flex items-center gap-2">
           <Avatar size={28} hue={205}>
             <FlaskIcon className="h-4 w-4 text-white" />
@@ -732,10 +688,10 @@ function AgentCollab({
               className={`flex ${fromUser ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`max-w-[85%] rounded-xl px-3.5 py-3 text-sm leading-relaxed shadow-sm ${
+                className={`max-w-[85%] rounded-2xl px-3.5 py-3 text-sm leading-relaxed ${
                   fromUser
-                    ? "bg-blue-700 text-white"
-                    : "border border-zinc-200 bg-white text-zinc-700"
+                    ? "bg-blue-600 text-white shadow-sm"
+                    : "bg-white/70 text-zinc-700 ring-1 ring-zinc-950/5"
                 }`}
               >
                 <p>{message.text}</p>
@@ -752,8 +708,8 @@ function AgentCollab({
         })}
 
         {experiment.pendingQuestion && experiment.status === "needs-input" && (
-          <div className="rounded-xl border border-blue-300 bg-white p-4 shadow-sm ring-1 ring-blue-100">
-            <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-blue-700">
+          <div className="rounded-2xl bg-amber-50/80 p-4 ring-1 ring-amber-200/80">
+            <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-amber-700">
               <WarningIcon className="h-3.5 w-3.5" />
               {experiment.pendingQuestion.title}
             </p>
@@ -769,7 +725,7 @@ function AgentCollab({
                     addReply(option);
                     onApprove(experiment);
                   }}
-                  className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-sm font-medium text-zinc-700 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
+                  className="rounded-xl bg-white/80 px-3 py-1.5 text-sm font-medium text-zinc-700 ring-1 ring-zinc-950/5 transition-colors hover:bg-white hover:text-blue-700"
                 >
                   {option}
                 </button>
@@ -785,7 +741,7 @@ function AgentCollab({
           e.preventDefault();
           addReply(reply);
         }}
-        className="border-t border-zinc-200 bg-white p-4"
+        className="border-t border-zinc-200/70 bg-white/55 p-4"
       >
         <textarea
           value={reply}
@@ -805,7 +761,7 @@ function AgentCollab({
           <button
             type="submit"
             disabled={!reply.trim()}
-            className="rounded-lg bg-blue-700 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-xl bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Send
           </button>
@@ -827,24 +783,113 @@ function ExperimentDetail({
   onNotify: (message: string) => void;
 }) {
   const metricName = experiment.metricLabel.replace(/^Current\s+/i, "");
+  const canApprove = experiment.status === "needs-input";
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onBack();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onBack]);
 
   return (
-    <div className="grid min-h-0 flex-1 grid-cols-[0.9fr_1.15fr_0.95fr] overflow-hidden bg-white">
-      <ExperimentSummaryPanel
-        experiment={experiment}
-        metricName={metricName}
-        onBack={onBack}
-        onApprove={onApprove}
-        onNotify={onNotify}
+    <div className="fixed inset-0 z-40 flex items-center justify-center px-4 py-5 md:left-64 md:px-6 md:py-8">
+      <button
+        type="button"
+        aria-label="Close experiment detail"
+        onClick={onBack}
+        className="absolute inset-0 animate-fade-in bg-zinc-950/10 backdrop-blur-[6px]"
       />
 
-      <OptimizationPanel experiment={experiment} metricName={metricName} />
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="experiment-detail-title"
+        className="relative z-10 flex max-h-[calc(100vh-2.5rem)] w-full max-w-[1400px] animate-scale-in flex-col overflow-hidden rounded-[28px] border border-white/70 bg-white/80 shadow-[0_24px_80px_rgba(15,23,42,0.18)] ring-1 ring-zinc-950/5 backdrop-blur-2xl md:max-h-[calc(100vh-4rem)]"
+      >
+        <header className="border-b border-zinc-200/70 bg-white/45 px-5 py-4 md:px-6 md:py-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0 flex-1">
+              <button
+                type="button"
+                onClick={onBack}
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-zinc-500 transition-colors hover:text-zinc-900"
+              >
+                <ArrowRightIcon className="h-4 w-4 rotate-180" />
+                Experiments
+              </button>
 
-      <AgentCollab
-        key={experiment.id}
-        experiment={experiment}
-        onApprove={onApprove}
-      />
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <span className="rounded-lg bg-zinc-100/80 px-2 py-1 font-mono text-xs text-zinc-500 ring-1 ring-zinc-950/5">
+                  {experiment.repo}
+                </span>
+                <span
+                  className={`rounded-full px-2.5 py-1 text-xs font-medium capitalize ring-1 ring-inset ring-black/5 ${
+                    STATUS_TONE[experiment.status]
+                  }`}
+                >
+                  {statusLabel(experiment.status)}
+                </span>
+              </div>
+
+              <h1
+                id="experiment-detail-title"
+                className="mt-3 text-2xl font-semibold tracking-tight text-zinc-950"
+              >
+                {experiment.title}
+              </h1>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-500">
+                {experiment.objective}
+              </p>
+            </div>
+
+            <div className="flex shrink-0 items-center gap-2">
+              {canApprove ? (
+                <button
+                  type="button"
+                  onClick={() => onApprove(experiment)}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700"
+                >
+                  Approve &amp; resume
+                  <ArrowRightIcon className="h-4 w-4" />
+                </button>
+              ) : (
+                <div className="rounded-2xl bg-zinc-100/80 px-3 py-2 text-right ring-1 ring-zinc-950/5">
+                  <p className="text-xs text-zinc-500">
+                    {experiment.metricLabel}
+                  </p>
+                  <p className="text-sm font-semibold text-zinc-900">
+                    {experiment.metricValue}
+                  </p>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={onBack}
+                aria-label="Close"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-zinc-100/80 text-zinc-500 ring-1 ring-zinc-950/5 transition-colors hover:bg-white hover:text-zinc-900"
+              >
+                <CloseIcon className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[0.9fr_1.1fr] lg:overflow-hidden xl:grid-cols-[0.8fr_1.1fr_0.9fr]">
+          <ExperimentSummaryPanel
+            experiment={experiment}
+            metricName={metricName}
+            onNotify={onNotify}
+          />
+
+          <OptimizationPanel experiment={experiment} metricName={metricName} />
+
+          <AgentCollab
+            key={experiment.id}
+            experiment={experiment}
+            onApprove={onApprove}
+          />
+        </div>
+      </section>
     </div>
   );
 }
@@ -1080,16 +1125,8 @@ export default function Dashboard() {
       </aside>
 
       {/* Main */}
-      <main className="flex flex-1 flex-col overflow-hidden">
-        {nav === "experiments" && selected ? (
-          <ExperimentDetail
-            key={selected.id}
-            experiment={selected}
-            onBack={() => setSelectedId(null)}
-            onApprove={handleApprove}
-            onNotify={notify}
-          />
-        ) : nav === "experiments" ? (
+      <main className="relative flex flex-1 flex-col overflow-hidden">
+        {nav === "experiments" ? (
           <div className="mx-auto w-full max-w-5xl overflow-y-auto px-8 py-8">
             <div className="flex items-center justify-between gap-4">
               <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">
@@ -1160,6 +1197,16 @@ export default function Dashboard() {
           />
         )}
       </main>
+
+      {nav === "experiments" && selected && (
+        <ExperimentDetail
+          key={selected.id}
+          experiment={selected}
+          onBack={() => setSelectedId(null)}
+          onApprove={handleApprove}
+          onNotify={notify}
+        />
+      )}
 
       {showCreate && (
         <CreateModal onClose={() => setShowCreate(false)} onCreate={handleCreate} />
