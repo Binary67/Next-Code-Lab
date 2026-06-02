@@ -3,6 +3,7 @@ import type { ThreadOptions } from "@openai/codex-sdk";
 import type {
   ContinueTrialInput,
   StartTrialInput,
+  TrialAgentResponse,
   TrialAgentResult,
 } from "./types";
 import { createCodexClient } from "./client";
@@ -16,17 +17,70 @@ const trialThreadOptions = {
   "sandboxMode" | "approvalPolicy" | "networkAccessEnabled"
 >;
 
+const trialOutputSchema = {
+  type: "object",
+  properties: {
+    status: { type: "string", enum: ["request_eval", "done", "blocked"] },
+    message: { type: "string" },
+  },
+  required: ["status", "message"],
+  additionalProperties: false,
+} as const;
+
+function parseTrialResponse(finalResponse: string): TrialAgentResponse {
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(finalResponse);
+  } catch (error) {
+    throw new Error("Codex returned invalid trial JSON.", { cause: error });
+  }
+
+  if (
+    typeof parsed !== "object" ||
+    parsed === null ||
+    Array.isArray(parsed)
+  ) {
+    throw new Error("Codex returned invalid trial output.");
+  }
+
+  const value = parsed as Record<string, unknown>;
+  if (
+    value.status !== "request_eval" &&
+    value.status !== "done" &&
+    value.status !== "blocked"
+  ) {
+    throw new Error("Codex returned an unknown trial status.");
+  }
+
+  if (typeof value.message !== "string" || !value.message.trim()) {
+    throw new Error("Codex returned an invalid trial message.");
+  }
+
+  return {
+    status: value.status,
+    message: value.message.trim(),
+  };
+}
+
 function startInstruction(input: StartTrialInput) {
   return [
-    input.instruction,
+    "You are running one isolated optimization trial for this repository.",
+    `Trial number: ${input.trialNumber}`,
+    `Optimization objective: ${input.objective}`,
     "",
-    "Evaluation contract:",
-    `- Eval script: ${input.evaluation.scriptPath}`,
-    `- Run command: ${input.evaluation.runCommand}`,
-    `- Score name: ${input.evaluation.scoreName}`,
-    `- Score direction: ${input.evaluation.scoreDirection}`,
-    "- Treat a non-zero eval exit as an invalid trial.",
-    "- Any score improvement in the selected direction is useful.",
+    "Hidden evaluation:",
+    `- Score name: ${input.scoreName}`,
+    `- Score direction: ${input.scoreDirection}`,
+    `- Baseline score: ${input.baselineScore}`,
+    `- Evaluation requests available: ${input.evalBudget}`,
+    "",
+    "Do not search for, create, modify, or run the evaluation script.",
+    "Optimize the codebase based on the objective and metric name only.",
+    "When you have made changes that should be scored, return status request_eval.",
+    "If you are done without needing another score, return status done.",
+    "If you cannot proceed without user input, return status blocked.",
+    "Any score improvement in the selected direction is enough for this trial to stop successfully.",
   ].join("\n");
 }
 
@@ -38,7 +92,9 @@ export class CodexTrialAgent {
       ...trialThreadOptions,
       workingDirectory: input.repoPath,
     });
-    const turn = await thread.run(startInstruction(input));
+    const turn = await thread.run(startInstruction(input), {
+      outputSchema: trialOutputSchema,
+    });
     const trialThreadId = thread.id;
 
     if (!trialThreadId) {
@@ -47,7 +103,7 @@ export class CodexTrialAgent {
 
     return {
       trialThreadId,
-      response: turn.finalResponse,
+      response: parseTrialResponse(turn.finalResponse),
     };
   }
 
@@ -56,11 +112,13 @@ export class CodexTrialAgent {
       ...trialThreadOptions,
       workingDirectory: input.repoPath,
     });
-    const turn = await thread.run(input.instruction);
+    const turn = await thread.run(input.instruction, {
+      outputSchema: trialOutputSchema,
+    });
 
     return {
       trialThreadId: input.trialThreadId,
-      response: turn.finalResponse,
+      response: parseTrialResponse(turn.finalResponse),
     };
   }
 }

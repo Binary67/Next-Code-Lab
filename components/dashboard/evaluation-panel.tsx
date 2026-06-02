@@ -26,6 +26,7 @@ export function EvaluationPanel({
   experiment,
   pendingAction,
   onChange,
+  onChangeRunSettings,
   onStartInterview,
   onSendSetupReply,
   onApproveGenerated,
@@ -35,6 +36,10 @@ export function EvaluationPanel({
   onChange: (
     experiment: Experiment,
     patch: Partial<ExperimentEvaluation>,
+  ) => void;
+  onChangeRunSettings: (
+    experiment: Experiment,
+    patch: Partial<Pick<Experiment, "trialCount" | "evalBudgetPerTrial">>,
   ) => void;
   onStartInterview: (experiment: Experiment) => void;
   onSendSetupReply: (experiment: Experiment, text: string) => void;
@@ -48,6 +53,7 @@ export function EvaluationPanel({
   const missingFields = getMissingEvaluationFields(evaluation);
   const isReady = evaluation.status === "ready";
   const hasActiveEvalContract = evaluation.mode === "existing" || isReady;
+  const canEditRunSettings = experiment.status === "setup";
   const unsetContractValue = (
     <span className="shrink-0 font-medium text-zinc-500">Not set</span>
   );
@@ -75,6 +81,15 @@ export function EvaluationPanel({
   };
 
   const sendReply = () => submitReply(reply);
+  const updateRunSetting = (
+    field: "trialCount" | "evalBudgetPerTrial",
+    value: string,
+  ) => {
+    const parsed = Number.parseInt(value, 10);
+    const next = Number.isFinite(parsed) ? Math.max(1, parsed) : 1;
+
+    onChangeRunSettings(experiment, { [field]: next });
+  };
 
   return (
     <section className="grid h-full min-h-0 gap-5 overflow-y-auto scrollbar-hidden lg:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)] lg:overflow-hidden">
@@ -143,7 +158,7 @@ export function EvaluationPanel({
                   onChange={(e) =>
                     onChange(experiment, { scriptPath: e.target.value })
                   }
-                  placeholder="/path/to/eval.ts"
+                  placeholder=".local/evals/my-eval.mjs"
                   className={`${inputClass} font-mono`}
                 />
               </div>
@@ -156,7 +171,7 @@ export function EvaluationPanel({
                   onChange={(e) =>
                     onChange(experiment, { runCommand: e.target.value })
                   }
-                  placeholder="pnpm tsx /path/to/eval.ts"
+                  placeholder="node .local/evals/my-eval.mjs"
                   className={`${inputClass} font-mono`}
                 />
               </div>
@@ -483,6 +498,44 @@ export function EvaluationPanel({
           </div>
         </section>
 
+        <section className="rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+            Run settings
+          </p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-zinc-700">
+                Trial count
+              </label>
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={experiment.trialCount}
+                onChange={(e) => updateRunSetting("trialCount", e.target.value)}
+                disabled={!canEditRunSettings}
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-zinc-700">
+                Eval budget per trial
+              </label>
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={experiment.evalBudgetPerTrial}
+                onChange={(e) =>
+                  updateRunSetting("evalBudgetPerTrial", e.target.value)
+                }
+                disabled={!canEditRunSettings}
+                className={inputClass}
+              />
+            </div>
+          </div>
+        </section>
+
         <section className="rounded-2xl bg-zinc-50/70 p-4 ring-1 ring-zinc-950/5">
           <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
             Contract behavior
@@ -490,6 +543,7 @@ export function EvaluationPanel({
           <ul className="mt-3 space-y-2 text-sm text-zinc-500">
             <li>Command exits 0 when the eval runs successfully.</li>
             <li>Stdout prints one numeric score.</li>
+            <li>Target repo path is available as OPTIMIZER_TARGET_REPO.</li>
             <li>Non-zero exit marks the trial invalid.</li>
             <li>Any improvement in the chosen direction counts.</li>
           </ul>

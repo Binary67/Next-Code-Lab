@@ -12,6 +12,7 @@ export const STATUS_TONE: Record<Status, string> = {
   running: "bg-blue-50 text-blue-700",
   "needs-input": "bg-amber-50 text-amber-700 ring-1 ring-amber-200",
   completed: "bg-emerald-50 text-emerald-700",
+  failed: "bg-rose-50 text-rose-700 ring-1 ring-rose-200",
 };
 
 export const TRIAL_TONE = {
@@ -19,6 +20,7 @@ export const TRIAL_TONE = {
   completed: "bg-emerald-50 text-emerald-700",
   "needs-input": "bg-amber-50 text-amber-700",
   running: "bg-blue-50 text-blue-700",
+  failed: "bg-rose-50 text-rose-700",
 } as const;
 
 export const PROGRESS_TONE: Record<ProgressStep["status"], string> = {
@@ -37,6 +39,7 @@ export const CHANGE_TONE: Record<ExperimentChange["status"], string> = {
 export function statusLabel(status: Status | ExperimentTrial["status"]) {
   if (status === "needs-input") return "Needs input";
   if (status === "setup") return "Setup";
+  if (status === "failed") return "Failed";
   return status;
 }
 export function EmptyState({

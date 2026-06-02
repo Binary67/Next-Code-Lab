@@ -25,7 +25,6 @@ const interviewThreadOptions = {
 
 const approvalThreadOptions = {
   ...interviewThreadOptions,
-  sandboxMode: "workspace-write",
 } satisfies Pick<
   ThreadOptions,
   | "sandboxMode"
@@ -68,6 +67,7 @@ const evalSetupOutputSchema = {
     contract: {
       anyOf: [contractSchema, { type: "null" }],
     },
+    scriptContent: { type: ["string", "null"] },
   },
   required: [
     "status",
@@ -76,6 +76,7 @@ const evalSetupOutputSchema = {
     "choices",
     "proposedContract",
     "contract",
+    "scriptContent",
   ],
   additionalProperties: false,
 } as const;
@@ -174,6 +175,7 @@ function parseEvalSetupResponse(finalResponse: string): EvalSetupResponse {
       status: "generated",
       message,
       contract: parseContract(parsed.contract, "contract"),
+      scriptContent: requiredString(parsed.scriptContent, "scriptContent"),
     };
   }
 
@@ -181,6 +183,8 @@ function parseEvalSetupResponse(finalResponse: string): EvalSetupResponse {
 }
 
 function startInstruction(input: StartEvalSetupInput) {
+  const generatedScriptPath = `.local/evals/${input.experimentId}/eval.mjs`;
+
   return [
     "You are setting up an evaluation script for an optimization experiment.",
     `Experiment title: ${input.title}`,
@@ -196,7 +200,10 @@ function startInstruction(input: StartEvalSetupInput) {
     "- Stdout prints one numeric score and exits 0 on success.",
     "- Non-zero exit means an invalid trial.",
     "- The score direction is inferable or explicitly selected.",
-    "- The script path is repo-relative, preferably under .optimizer/evals/.",
+    "- The eval script belongs to the orchestrator app, not the target repository.",
+    `- For generated evals, propose script path ${generatedScriptPath}.`,
+    `- For generated evals, propose run command: node ${generatedScriptPath}`,
+    "- Generated eval scripts must read the target repository path from OPTIMIZER_TARGET_REPO.",
     "",
     "Metric selection policy:",
     "- Treat a metric as selected only when the experiment title or objective explicitly names the metric or scoring signal to optimize.",
@@ -208,11 +215,14 @@ function startInstruction(input: StartEvalSetupInput) {
     "Ask exactly one highest-value clarifying question when required by the metric selection policy or when another answer cannot be inferred from the repository or prior context.",
     "If the user explicitly selected the metric and enough information is available, return a proposed eval contract instead of asking a question.",
     "During interview turns, do not return status generated.",
+    "Do not write files during interview turns.",
     "For fields that do not apply to the selected status, return null.",
   ].join("\n");
 }
 
 function continueInstruction(input: ContinueEvalSetupInput) {
+  const generatedScriptPath = `.local/evals/${input.experimentId}/eval.mjs`;
+
   return [
     "Continue the eval setup interview using this user reply.",
     "",
@@ -221,6 +231,8 @@ function continueInstruction(input: ContinueEvalSetupInput) {
     "Treat this reply as the user's selected metric if it names or selects a metric.",
     "Reinspect the repository if needed. Ask exactly one highest-value clarifying question only if the metric is still unclear or the eval contract still cannot be inferred. Include up to three suggested choices when useful.",
     "If the user selected the metric and enough information is available, return status ready with a proposed eval contract.",
+    `For generated evals, use script path ${generatedScriptPath} and run command node ${generatedScriptPath}.`,
+    "Generated eval scripts must read the target repository path from OPTIMIZER_TARGET_REPO.",
     "Do not write files and do not return status generated during this interview turn.",
     "For fields that do not apply to the selected status, return null.",
   ].join("\n");
@@ -230,16 +242,17 @@ function approveInstruction(input: ApproveEvalSetupInput) {
   const contract = input.proposedContract;
 
   return [
-    "The user approved this eval contract. Write the eval script now.",
+    "The user approved this eval contract. Generate the eval script content now.",
     "",
     `Script path: ${contract.scriptPath}`,
     `Run command: ${contract.runCommand}`,
     `Score name: ${contract.scoreName}`,
     `Score direction: ${contract.scoreDirection}`,
     "",
-    "Create or update only the eval script file and any required parent directory. Do not modify package manifests or unrelated files.",
-    "The script must be runnable from the repository root using the run command, print one numeric score to stdout, and exit 0 on successful evaluation.",
-    "After writing the script, return status generated with the final contract.",
+    "Do not write files. Return the complete eval script as scriptContent.",
+    "The orchestrator will store this script in its own .local directory, outside the target repository.",
+    "The script must read the target repository path from OPTIMIZER_TARGET_REPO, print one numeric score to stdout, and exit 0 on successful evaluation.",
+    "Return status generated with the final contract and scriptContent.",
     "For fields that do not apply to the selected status, return null.",
   ].join("\n");
 }

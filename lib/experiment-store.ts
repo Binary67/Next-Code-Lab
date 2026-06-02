@@ -1,7 +1,10 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import type { Experiment } from "@/lib/experiments";
+import {
+  applyExperimentDefaults,
+  type Experiment,
+} from "@/lib/experiments";
 
 const localDataDir = join(process.cwd(), ".local");
 const experimentsPath = join(localDataDir, "experiments.json");
@@ -24,7 +27,7 @@ export async function readExperiments(): Promise<Experiment[]> {
       throw new Error(`${experimentsPath} must contain an experiment array.`);
     }
 
-    return parsed as Experiment[];
+    return (parsed as Experiment[]).map(applyExperimentDefaults);
   } catch (error) {
     if (!isMissingFile(error)) {
       throw error;

@@ -1,4 +1,9 @@
-import type { Experiment, ExperimentEvaluation } from "@/lib/experiments";
+import {
+  DEFAULT_EVAL_BUDGET_PER_TRIAL,
+  DEFAULT_TRIAL_COUNT,
+  type Experiment,
+  type ExperimentEvaluation,
+} from "@/lib/experiments";
 import type {
   EvalSetupResponse,
   TrialEvaluationContract,
@@ -30,6 +35,8 @@ export function createExperimentFromDraft(draft: ExperimentDraft): Experiment {
     repo: draft.repo.trim(),
     title,
     description: context,
+    trialCount: DEFAULT_TRIAL_COUNT,
+    evalBudgetPerTrial: DEFAULT_EVAL_BUDGET_PER_TRIAL,
   };
   const detail = {
     objective: context,
@@ -137,6 +144,18 @@ export function updateExperimentEvaluation(
   };
 }
 
+export function updateExperimentRunSettings(
+  experiment: Experiment,
+  patch: Partial<Pick<Experiment, "trialCount" | "evalBudgetPerTrial">>,
+): Experiment {
+  return {
+    ...experiment,
+    trialCount: patch.trialCount ?? experiment.trialCount,
+    evalBudgetPerTrial:
+      patch.evalBudgetPerTrial ?? experiment.evalBudgetPerTrial,
+  };
+}
+
 export function applyEvalSetupStarted(
   experiment: Experiment,
   evalSetupThreadId: string,
@@ -233,72 +252,6 @@ export function applyGeneratedEvaluationApproval(
         : experiment.metricValue,
     targetValue: directionLabel(nextEvaluation.scoreDirection),
     metrics: refreshEvaluationMetrics(experiment.metrics, nextEvaluation),
-  };
-}
-
-export function startExperiment(experiment: Experiment): Experiment {
-  const evaluation = normalizeEvaluation(experiment.evaluation);
-  const metricLabel = "Current " + evaluation.scoreName;
-  const direction = directionLabel(evaluation.scoreDirection);
-  const runtimeInstruction = [
-    "Repository: " + experiment.repo,
-    "Eval script: " + evaluation.scriptPath,
-    "Run command: " + evaluation.runCommand,
-    "Score: " + evaluation.scoreName,
-    "Direction: " + evaluation.scoreDirection,
-  ].join("\n");
-
-  return {
-    ...experiment,
-    status: "running",
-    metricLabel,
-    metricValue: "baseline pending",
-    timing: "just started",
-    targetLabel: "Direction",
-    targetValue: direction,
-    evaluation,
-    metrics: [],
-    trials: [
-      {
-        id: "T-01",
-        title: "Baseline evaluation",
-        summary: "Run " + evaluation.runCommand + " and record " + evaluation.scoreName + ".",
-        metricValue: "pending",
-        duration: "Just now",
-        status: "running",
-      },
-      ...experiment.trials.filter((trial) => trial.id !== "Setup"),
-    ],
-    progressSteps: experiment.progressSteps.map((step) =>
-      step.id === "evaluation-setup"
-        ? {
-            ...step,
-            status: "completed",
-            detail: "Evaluation contract is ready.",
-            time: "Just now",
-          }
-        : step.id === "baseline-measurement"
-          ? { ...step, status: "active", time: "Now" }
-          : step,
-    ),
-    changes: [
-      {
-        id: "eval-contract",
-        path: evaluation.scriptPath,
-        summary: "Use " + evaluation.scoreName + " eval contract for optimization.",
-        status: "planned",
-      },
-      ...experiment.changes.filter((change) => change.id !== "eval-contract"),
-    ],
-    agentMessages: [
-      ...experiment.agentMessages,
-      {
-        id: "start-" + Date.now(),
-        author: "agent",
-        text: "Starting optimization with this eval contract:\n" + runtimeInstruction,
-        time: "Just now",
-      },
-    ],
   };
 }
 

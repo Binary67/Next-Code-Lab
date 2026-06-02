@@ -22,6 +22,7 @@ export type EvalSetupGeneratedResult = {
   status: "generated";
   message: string;
   contract: TrialEvaluationContract;
+  scriptContent: string;
 };
 
 export type EvalSetupResponse =
@@ -35,18 +36,21 @@ export type EvalSetupAgentResult = {
 };
 
 export type StartEvalSetupInput = {
+  experimentId: string;
   repoPath: string;
   title: string;
   objective: string;
 };
 
 export type ContinueEvalSetupInput = {
+  experimentId: string;
   evalSetupThreadId: string;
   repoPath: string;
   reply: string;
 };
 
 export type ApproveEvalSetupInput = {
+  experimentId: string;
   evalSetupThreadId: string;
   repoPath: string;
   proposedContract: TrialEvaluationContract;
@@ -54,8 +58,12 @@ export type ApproveEvalSetupInput = {
 
 export type StartTrialInput = {
   repoPath: string;
-  instruction: string;
-  evaluation: TrialEvaluationContract;
+  objective: string;
+  scoreName: string;
+  scoreDirection: "minimize" | "maximize";
+  baselineScore: number;
+  evalBudget: number;
+  trialNumber: number;
 };
 
 export type ContinueTrialInput = {
@@ -64,7 +72,12 @@ export type ContinueTrialInput = {
   instruction: string;
 };
 
+export type TrialAgentResponse = {
+  status: "request_eval" | "done" | "blocked";
+  message: string;
+};
+
 export type TrialAgentResult = {
   trialThreadId: string;
-  response: string;
+  response: TrialAgentResponse;
 };

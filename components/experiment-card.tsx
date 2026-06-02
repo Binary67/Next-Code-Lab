@@ -32,6 +32,11 @@ const STATUS_BADGE: Record<
     className: "bg-zinc-100 text-zinc-500",
     icon: "check",
   },
+  failed: {
+    label: "Failed",
+    className: "bg-rose-50 text-rose-700",
+    icon: "warn",
+  },
 };
 
 function StatusBadge({ status }: { status: Status }) {

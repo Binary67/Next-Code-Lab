@@ -8,7 +8,9 @@ import type {
   EvalSetupAgentResult,
   TrialEvaluationContract,
 } from "@/lib/codex/types";
+import { writeGeneratedEvalScript } from "@/lib/eval-artifacts";
 import { writeExperiments } from "@/lib/experiment-store";
+import { ExperimentOrchestrator } from "@/lib/experiment-orchestrator";
 import type { Experiment } from "@/lib/experiments";
 
 type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -21,21 +23,28 @@ type StartEvalInterviewInput = {
 };
 
 type SendEvalSetupReplyInput = {
+  experimentId: string;
   threadId: string;
   repoPath: string;
   reply: string;
 };
 
 type ApproveGeneratedEvaluationInput = {
+  experimentId: string;
   threadId: string;
   repoPath: string;
   proposedContract: TrialEvaluationContract;
 };
 
+type StartExperimentInput = {
+  experiment: Experiment;
+};
+
 const evalSetupAgent = new CodexEvalSetupAgent();
+const experimentOrchestrator = new ExperimentOrchestrator();
 
 function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "Eval setup failed.";
+  return error instanceof Error ? error.message : "Request failed.";
 }
 
 function isRemoteRepoPath(repoPath: string) {
@@ -53,7 +62,7 @@ async function resolveLocalRepoPath(repoPath: string) {
   }
 
   if (isRemoteRepoPath(trimmed)) {
-    throw new Error("Eval setup only supports existing local repository paths.");
+    throw new Error("Experiments only support existing local repository paths.");
   }
 
   const resolved = isAbsolute(trimmed) ? trimmed : resolve(trimmed);
@@ -113,9 +122,9 @@ export async function startEvalInterview(
   input: StartEvalInterviewInput,
 ): Promise<ActionResult<EvalSetupAgentResult>> {
   try {
-    void input.experimentId;
     const repoPath = await resolveLocalRepoPath(input.repoPath);
     const result = await evalSetupAgent.startInterview({
+      experimentId: requiredString(input.experimentId, "experiment ID"),
       repoPath,
       title: requiredString(input.title, "experiment title"),
       objective: requiredString(input.objective, "experiment objective"),
@@ -133,6 +142,7 @@ export async function sendEvalSetupReply(
   try {
     const repoPath = await resolveLocalRepoPath(input.repoPath);
     const result = await evalSetupAgent.continueInterview({
+      experimentId: requiredString(input.experimentId, "experiment ID"),
       evalSetupThreadId: requiredString(input.threadId, "eval setup thread ID"),
       repoPath,
       reply: requiredString(input.reply, "reply"),
@@ -150,9 +160,36 @@ export async function approveGeneratedEvaluation(
   try {
     const repoPath = await resolveLocalRepoPath(input.repoPath);
     const result = await evalSetupAgent.approveGenerated({
+      experimentId: requiredString(input.experimentId, "experiment ID"),
       evalSetupThreadId: requiredString(input.threadId, "eval setup thread ID"),
       repoPath,
       proposedContract: normalizeContract(input.proposedContract),
+    });
+
+    if (result.response.status !== "generated") {
+      throw new Error("Codex did not return a generated eval script.");
+    }
+
+    await writeGeneratedEvalScript(
+      requiredString(input.experimentId, "experiment ID"),
+      result.response.contract,
+      result.response.scriptContent,
+    );
+
+    return { ok: true, data: result };
+  } catch (error) {
+    return { ok: false, error: errorMessage(error) };
+  }
+}
+
+export async function startExperiment(
+  input: StartExperimentInput,
+): Promise<ActionResult<Experiment>> {
+  try {
+    const repoPath = await resolveLocalRepoPath(input.experiment.repo);
+    const result = await experimentOrchestrator.start({
+      experiment: input.experiment,
+      repoPath,
     });
 
     return { ok: true, data: result };

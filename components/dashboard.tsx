@@ -5,6 +5,7 @@ import {
   approveGeneratedEvaluation as approveGeneratedEvaluationAction,
   saveExperiments,
   sendEvalSetupReply as sendEvalSetupReplyAction,
+  startExperiment as startExperimentAction,
   startEvalInterview as startEvalInterviewAction,
 } from "@/app/actions";
 import ExperimentCard from "@/components/experiment-card";
@@ -36,7 +37,7 @@ import {
   applyGeneratedEvaluationApproval,
   approveExperiment,
   createExperimentFromDraft,
-  startExperiment,
+  updateExperimentRunSettings,
   updateExperimentEvaluation,
   type ExperimentDraft,
 } from "@/components/dashboard/state-transitions";
@@ -58,6 +59,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "running", label: "Running" },
   { id: "needs-input", label: "Needs input" },
   { id: "completed", label: "Completed" },
+  { id: "failed", label: "Failed" },
 ];
 
 function Placeholder({
@@ -96,6 +98,7 @@ export default function Dashboard({
     experimentId: string;
     action: EvalSetupPendingAction;
   } | null>(null);
+  const [runPendingId, setRunPendingId] = useState<string | null>(null);
   const didMountRef = useRef(false);
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
 
@@ -209,6 +212,7 @@ export default function Dashboard({
     notify("Sending eval setup reply...");
     try {
       const result = await sendEvalSetupReplyAction({
+        experimentId: experiment.id,
         threadId,
         repoPath: experiment.repo,
         reply: text,
@@ -257,6 +261,7 @@ export default function Dashboard({
     notify("Writing generated eval...");
     try {
       const result = await approveGeneratedEvaluationAction({
+        experimentId: experiment.id,
         threadId: experiment.evaluation.evalSetupThreadId,
         repoPath: experiment.repo,
         proposedContract: experiment.evaluation.proposedContract,
@@ -292,16 +297,48 @@ export default function Dashboard({
     }
   };
 
-  const handleStartExperiment = (experiment: Experiment) => {
+  const handleUpdateRunSettings = (
+    experiment: Experiment,
+    patch: Partial<Pick<Experiment, "trialCount" | "evalBudgetPerTrial">>,
+  ) => {
+    setItems((prev) =>
+      prev.map((e) =>
+        e.id === experiment.id ? updateExperimentRunSettings(e, patch) : e,
+      ),
+    );
+  };
+
+  const handleStartExperiment = async (experiment: Experiment) => {
+    if (runPendingId) {
+      notify("An experiment run is already starting");
+      return;
+    }
+
     if (experiment.evaluation.status !== "ready") {
       notify("Complete evaluation setup before starting");
       return;
     }
 
-    setItems((prev) =>
-      prev.map((e) => (e.id === experiment.id ? startExperiment(e) : e)),
-    );
-    notify('Started "' + experiment.title + '"');
+    setRunPendingId(experiment.id);
+    notify('Starting "' + experiment.title + '"');
+
+    try {
+      const result = await startExperimentAction({ experiment });
+
+      if (!result.ok) {
+        notify(result.error);
+        return;
+      }
+
+      setItems((prev) =>
+        prev.map((e) => (e.id === experiment.id ? result.data : e)),
+      );
+      notify('Completed "' + experiment.title + '"');
+    } finally {
+      setRunPendingId((current) =>
+        current === experiment.id ? null : current,
+      );
+    }
   };
 
   const handleApprove = (experiment: Experiment) => {
@@ -482,10 +519,12 @@ export default function Dashboard({
           onAnswer={handleAnswer}
           onSendReply={handleReply}
           onUpdateEvaluation={handleUpdateEvaluation}
+          onUpdateRunSettings={handleUpdateRunSettings}
           onStartEvalInterview={handleStartEvalInterview}
           onSendEvalSetupReply={handleEvalSetupReply}
           onApproveGeneratedEvaluation={handleApproveGeneratedEvaluation}
           onNotify={notify}
+          startPending={runPendingId === selected.id}
         />
       )}
 

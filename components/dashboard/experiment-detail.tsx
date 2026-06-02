@@ -197,10 +197,12 @@ export function ExperimentDetail({
   onAnswer,
   onSendReply,
   onUpdateEvaluation,
+  onUpdateRunSettings,
   onStartEvalInterview,
   onSendEvalSetupReply,
   onApproveGeneratedEvaluation,
   onNotify,
+  startPending,
 }: {
   experiment: Experiment;
   evalSetupPendingAction?: EvalSetupPendingAction;
@@ -213,10 +215,15 @@ export function ExperimentDetail({
     experiment: Experiment,
     patch: Partial<ExperimentEvaluation>,
   ) => void;
+  onUpdateRunSettings: (
+    experiment: Experiment,
+    patch: Partial<Pick<Experiment, "trialCount" | "evalBudgetPerTrial">>,
+  ) => void;
   onStartEvalInterview: (experiment: Experiment) => void;
   onSendEvalSetupReply: (experiment: Experiment, text: string) => void;
   onApproveGeneratedEvaluation: (experiment: Experiment) => void;
   onNotify: (message: string) => void;
+  startPending?: boolean;
 }) {
   const [detailTab, setDetailTab] = useState<DetailTabId>(
     experiment.status === "setup" ? "evaluation" : "overview",
@@ -225,7 +232,9 @@ export function ExperimentDetail({
   const canApprove = experiment.status === "needs-input";
   const needsInput = canApprove && Boolean(experiment.pendingQuestion);
   const canStart =
-    experiment.status === "setup" && experiment.evaluation.status === "ready";
+    experiment.status === "setup" &&
+    experiment.evaluation.status === "ready" &&
+    !startPending;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onBack();
@@ -241,6 +250,7 @@ export function ExperimentDetail({
             experiment={experiment}
             pendingAction={evalSetupPendingAction}
             onChange={onUpdateEvaluation}
+            onChangeRunSettings={onUpdateRunSettings}
             onStartInterview={onStartEvalInterview}
             onSendSetupReply={onSendEvalSetupReply}
             onApproveGenerated={onApproveGeneratedEvaluation}
@@ -336,7 +346,7 @@ export function ExperimentDetail({
                   }
                   className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Start experiment
+                  {startPending ? "Starting..." : "Start experiment"}
                   <ArrowRightIcon className="h-4 w-4" />
                 </button>
               ) : needsInput ? (

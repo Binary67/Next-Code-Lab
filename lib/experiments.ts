@@ -1,6 +1,6 @@
 import type { TrialEvaluationContract } from "./codex/types";
 
-export type Status = "setup" | "running" | "needs-input" | "completed";
+export type Status = "setup" | "running" | "needs-input" | "completed" | "failed";
 export type ScoreDirection = "minimize" | "maximize";
 export type EvaluationMode = "existing" | "generated";
 export type EvaluationStatus = "missing" | "incomplete" | "ready";
@@ -11,7 +11,12 @@ export type ExperimentMetric = {
   detail: string;
 };
 
-export type TrialStatus = "setup" | "completed" | "needs-input" | "running";
+export type TrialStatus =
+  | "setup"
+  | "completed"
+  | "needs-input"
+  | "running"
+  | "failed";
 
 export type ExperimentTrial = {
   id: string;
@@ -20,6 +25,15 @@ export type ExperimentTrial = {
   metricValue: string;
   duration: string;
   status: TrialStatus;
+  threadId?: string;
+  branchName?: string;
+  worktreePath?: string;
+  commitSha?: string;
+  score?: number;
+  evalsUsed?: number;
+  improved?: boolean;
+  startedAt?: string;
+  completedAt?: string;
 };
 
 export type TrendPoint = {
@@ -69,6 +83,12 @@ export type Experiment = {
   title: string;
   description: string;
   status: Status;
+  trialCount: number;
+  evalBudgetPerTrial: number;
+  baseBranch?: string;
+  baseCommit?: string;
+  baselineScore?: number;
+  bestBranchName?: string;
   metricLabel: string;
   metricValue: string;
   /** Improvement shown next to the metric, e.g. a 18% reduction. */
@@ -92,3 +112,18 @@ export type Experiment = {
     options: string[];
   };
 };
+
+export const DEFAULT_TRIAL_COUNT = 3;
+export const DEFAULT_EVAL_BUDGET_PER_TRIAL = 3;
+
+export function applyExperimentDefaults(experiment: Experiment): Experiment {
+  return {
+    ...experiment,
+    trialCount: Number.isInteger(experiment.trialCount)
+      ? experiment.trialCount
+      : DEFAULT_TRIAL_COUNT,
+    evalBudgetPerTrial: Number.isInteger(experiment.evalBudgetPerTrial)
+      ? experiment.evalBudgetPerTrial
+      : DEFAULT_EVAL_BUDGET_PER_TRIAL,
+  };
+}
