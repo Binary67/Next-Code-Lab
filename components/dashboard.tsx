@@ -1392,14 +1392,14 @@ function EvaluationPanel({
                 disabled={!canUseSetupChat}
                 placeholder={
                   canUseSetupChat
-                    ? "Tell the setup agent what the eval should measure..."
+                    ? "Click a suggested metric or type a custom one..."
                     : "Generated eval has been approved."
                 }
                 className={`${inputClass} resize-none`}
               />
               <div className="mt-2 flex items-center justify-between">
                 <p className="text-xs text-zinc-400">
-                  This thread is separate from runtime Agent Collab
+                  You can choose a suggestion or write your own metric
                 </p>
                 <button
                   type="submit"
