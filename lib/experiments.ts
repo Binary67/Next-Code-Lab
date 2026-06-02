@@ -1,3 +1,5 @@
+import type { TrialEvaluationContract } from "./codex/types";
+
 export type Status = "setup" | "running" | "needs-input" | "completed";
 export type ScoreDirection = "minimize" | "maximize";
 export type EvaluationMode = "existing" | "generated";
@@ -30,6 +32,7 @@ export type AgentMessage = {
   author: "agent" | "user";
   text: string;
   time: string;
+  choices?: string[];
 };
 
 export type ExperimentEvaluation = {
@@ -41,6 +44,7 @@ export type ExperimentEvaluation = {
   status: EvaluationStatus;
   evalSetupThreadId?: string;
   generatedScriptApproved?: boolean;
+  proposedContract?: TrialEvaluationContract;
   messages: AgentMessage[];
 };
 

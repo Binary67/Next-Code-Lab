@@ -1,10 +1,11 @@
-import { Codex, type ThreadOptions } from "@openai/codex-sdk";
+import type { ThreadOptions } from "@openai/codex-sdk";
 
 import type {
   ContinueTrialInput,
   StartTrialInput,
   TrialAgentResult,
 } from "./types";
+import { createCodexClient } from "./client";
 
 const trialThreadOptions = {
   sandboxMode: "workspace-write",
@@ -30,7 +31,7 @@ function startInstruction(input: StartTrialInput) {
 }
 
 export class CodexTrialAgent {
-  private readonly codex = new Codex();
+  private readonly codex = createCodexClient();
 
   async startTrial(input: StartTrialInput): Promise<TrialAgentResult> {
     const thread = this.codex.startThread({

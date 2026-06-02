@@ -1,11 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { saveExperiments } from "@/app/actions";
+import {
+  approveGeneratedEvaluation as approveGeneratedEvaluationAction,
+  saveExperiments,
+  sendEvalSetupReply as sendEvalSetupReplyAction,
+  startEvalInterview as startEvalInterviewAction,
+} from "@/app/actions";
 import ExperimentCard from "@/components/experiment-card";
 import {
   type EvaluationMode,
   type EvaluationStatus,
+  type AgentMessage,
   type Experiment,
   type ExperimentChange,
   type ExperimentEvaluation,
@@ -16,6 +22,10 @@ import {
   type Status,
   type TrendPoint,
 } from "@/lib/experiments";
+import type {
+  EvalSetupResponse,
+  TrialEvaluationContract,
+} from "@/lib/codex/types";
 import {
   ArrowRightIcon,
   Avatar,
@@ -43,6 +53,7 @@ type DetailTabId =
   | "trials"
   | "changes";
 type SourceType = "git" | "local";
+type EvalSetupPendingAction = "start" | "reply" | "approve";
 
 const PRIMARY_NAV = [
   { id: "experiments", label: "Experiments", Icon: FlaskIcon },
@@ -129,6 +140,47 @@ function evaluationStatusLabel(status: EvaluationStatus) {
 
 function directionLabel(direction: ScoreDirection) {
   return direction === "minimize" ? "Minimize" : "Maximize";
+}
+
+function formatEvalContract(contract: TrialEvaluationContract) {
+  return [
+    `Eval script: ${contract.scriptPath}`,
+    `Run command: ${contract.runCommand}`,
+    `Score: ${contract.scoreName}`,
+    `Direction: ${contract.scoreDirection}`,
+  ].join("\n");
+}
+
+function getEvalSetupContract(response: EvalSetupResponse) {
+  if (response.status === "ready") return response.proposedContract;
+  if (response.status === "generated") return response.contract;
+  return undefined;
+}
+
+function createEvalSetupAgentMessage(
+  response: EvalSetupResponse,
+): AgentMessage {
+  const contract = getEvalSetupContract(response);
+  const text =
+    response.status === "question"
+      ? [response.message, response.question].filter(Boolean).join("\n\n")
+      : contract
+        ? [response.message, formatEvalContract(contract)].join("\n\n")
+        : response.message;
+
+  return {
+    id: `eval-agent-${Date.now()}`,
+    author: "agent",
+    text,
+    time: "Just now",
+    choices: response.status === "question" ? response.choices : undefined,
+  };
+}
+
+function evalSetupPendingLabel(action: EvalSetupPendingAction) {
+  if (action === "start") return "Codex is working on the eval setup...";
+  if (action === "reply") return "Waiting for Codex...";
+  return "Writing generated eval...";
 }
 
 function refreshEvaluationMetrics(
@@ -1001,12 +1053,14 @@ function OverviewPanel({
 
 function EvaluationPanel({
   experiment,
+  pendingAction,
   onChange,
   onStartInterview,
   onSendSetupReply,
   onApproveGenerated,
 }: {
   experiment: Experiment;
+  pendingAction?: EvalSetupPendingAction;
   onChange: (
     experiment: Experiment,
     patch: Partial<ExperimentEvaluation>,
@@ -1017,6 +1071,9 @@ function EvaluationPanel({
 }) {
   const [reply, setReply] = useState("");
   const evaluation = experiment.evaluation;
+  const isEvalSetupPending = Boolean(pendingAction);
+  const canUseSetupChat =
+    !evaluation.generatedScriptApproved && !isEvalSetupPending;
   const missingFields = getMissingEvaluationFields(evaluation);
   const isReady = evaluation.status === "ready";
   const modeOptions: { id: EvaluationMode; label: string; detail: string }[] = [
@@ -1032,13 +1089,17 @@ function EvaluationPanel({
     },
   ];
 
-  const sendReply = () => {
-    const trimmed = reply.trim();
+  const submitReply = (text: string) => {
+    if (!canUseSetupChat) return;
+
+    const trimmed = text.trim();
     if (!trimmed) return;
 
     onSendSetupReply(experiment, trimmed);
     setReply("");
   };
+
+  const sendReply = () => submitReply(reply);
 
   return (
     <section className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
@@ -1072,6 +1133,7 @@ function EvaluationPanel({
                   key={option.id}
                   type="button"
                   onClick={() => onChange(experiment, { mode: option.id })}
+                  disabled={isEvalSetupPending}
                   className={`rounded-xl px-3.5 py-3 text-left ring-1 transition-colors ${
                     selected
                       ? "bg-blue-50 text-blue-700 ring-blue-200"
@@ -1186,13 +1248,14 @@ function EvaluationPanel({
                     Fill the template or let the setup agent collect the details.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => onStartInterview(experiment)}
-                  className="rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-amber-700 ring-1 ring-amber-200 transition-colors hover:bg-amber-100"
-                >
-                  Interview to fill gaps
-                </button>
+	                <button
+	                  type="button"
+	                  onClick={() => onStartInterview(experiment)}
+	                  disabled={isEvalSetupPending}
+	                  className="rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-amber-700 ring-1 ring-amber-200 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+	                >
+	                  {pendingAction === "start" ? "Starting..." : "Interview to fill gaps"}
+	                </button>
               </div>
             )}
           </section>
@@ -1211,59 +1274,89 @@ function EvaluationPanel({
                     </span>
                   </p>
                 </div>
-                {!evaluation.evalSetupThreadId && (
-                  <button
-                    type="button"
-                    onClick={() => onStartInterview(experiment)}
-                    className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700"
-                  >
-                    Start interview
-                  </button>
-                )}
+	                {!evaluation.evalSetupThreadId && (
+	                  <button
+	                    type="button"
+	                    onClick={() => onStartInterview(experiment)}
+	                    disabled={isEvalSetupPending}
+	                    className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+	                  >
+	                    {pendingAction === "start" ? "Starting..." : "Start interview"}
+	                  </button>
+	                )}
               </div>
             </header>
 
             <div className="flex-1 space-y-4 overflow-y-auto px-4 py-5">
-              {evaluation.messages.length === 0 ? (
-                <div className="rounded-xl bg-white/70 px-4 py-6 text-center ring-1 ring-zinc-950/5">
-                  <p className="text-sm font-medium text-zinc-900">
-                    No eval setup messages yet.
-                  </p>
-                  <p className="mt-1 text-sm text-zinc-500">
-                    Start the interview or describe what the eval should measure.
-                  </p>
-                </div>
-              ) : (
-                evaluation.messages.map((message) => {
-                  const fromUser = message.author === "user";
-                  return (
-                    <div
-                      key={message.id}
-                      className={`flex ${
-                        fromUser ? "justify-end" : "justify-start"
-                      }`}
-                    >
-                      <div
-                        className={`max-w-[85%] rounded-2xl px-3.5 py-3 text-sm leading-relaxed ${
-                          fromUser
-                            ? "bg-blue-600 text-white shadow-sm"
-                            : "bg-white/70 text-zinc-700 ring-1 ring-zinc-950/5"
-                        }`}
-                      >
-                        <p>{message.text}</p>
-                        <p
-                          className={`mt-2 text-[11px] ${
-                            fromUser ? "text-blue-100" : "text-zinc-400"
-                          }`}
-                        >
-                          {message.time}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
+	              {evaluation.messages.length === 0 ? (
+	                <div className="rounded-xl bg-white/70 px-4 py-6 text-center ring-1 ring-zinc-950/5">
+	                  <p className="text-sm font-medium text-zinc-900">
+	                    {pendingAction
+	                      ? evalSetupPendingLabel(pendingAction)
+	                      : "No eval setup messages yet."}
+	                  </p>
+	                  <p className="mt-1 text-sm text-zinc-500">
+	                    {pendingAction
+	                      ? "This can take a moment."
+	                      : "Start the interview or describe what the eval should measure."}
+	                  </p>
+	                </div>
+	              ) : (
+	                <>
+	                  {evaluation.messages.map((message) => {
+	                    const fromUser = message.author === "user";
+	                    return (
+	                      <div
+	                        key={message.id}
+	                        className={`flex ${
+	                          fromUser ? "justify-end" : "justify-start"
+	                        }`}
+	                      >
+	                        <div
+	                          className={`max-w-[85%] rounded-2xl px-3.5 py-3 text-sm leading-relaxed ${
+	                            fromUser
+	                              ? "bg-blue-600 text-white shadow-sm"
+	                              : "bg-white/70 text-zinc-700 ring-1 ring-zinc-950/5"
+	                          }`}
+	                        >
+	                          <p className="whitespace-pre-line">{message.text}</p>
+	                          {!fromUser && message.choices && (
+	                            <div className="mt-3 flex flex-wrap gap-2">
+	                              {message.choices.map((choice) => (
+	                                <button
+	                                  key={choice}
+	                                  type="button"
+	                                  onClick={() => submitReply(choice)}
+	                                  disabled={!canUseSetupChat}
+	                                  className="rounded-lg bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 ring-1 ring-zinc-200 transition-colors hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+	                                >
+	                                  {choice}
+	                                </button>
+	                              ))}
+	                            </div>
+	                          )}
+	                          <p
+	                            className={`mt-2 text-[11px] ${
+	                              fromUser ? "text-blue-100" : "text-zinc-400"
+	                            }`}
+	                          >
+	                            {message.time}
+	                          </p>
+	                        </div>
+	                      </div>
+	                    );
+	                  })}
+	                  {pendingAction && (
+	                    <div className="flex justify-start">
+	                      <div className="inline-flex max-w-[85%] items-center gap-2 rounded-2xl bg-white/70 px-3.5 py-3 text-sm text-zinc-600 ring-1 ring-zinc-950/5">
+	                        <span className="h-2 w-2 animate-pulse rounded-full bg-blue-500" />
+	                        {evalSetupPendingLabel(pendingAction)}
+	                      </div>
+	                    </div>
+	                  )}
+	                </>
+	              )}
+	            </div>
 
             <form
               onSubmit={(e) => {
@@ -1282,7 +1375,12 @@ function EvaluationPanel({
                   }
                 }}
                 rows={3}
-                placeholder="Tell the setup agent what the eval should measure..."
+                disabled={!canUseSetupChat}
+                placeholder={
+                  canUseSetupChat
+                    ? "Tell the setup agent what the eval should measure..."
+                    : "Generated eval has been approved."
+                }
                 className={`${inputClass} resize-none`}
               />
               <div className="mt-2 flex items-center justify-between">
@@ -1291,7 +1389,7 @@ function EvaluationPanel({
                 </p>
                 <button
                   type="submit"
-                  disabled={!reply.trim()}
+                  disabled={!canUseSetupChat || !reply.trim()}
                   className="rounded-xl bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Send
@@ -1352,23 +1450,55 @@ function EvaluationPanel({
             <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
               Generated script
             </p>
-            <p className="mt-3 text-sm leading-relaxed text-zinc-500">
-              Approving the generated eval stores the script path and command on
-              this experiment.
-            </p>
-            <button
-              type="button"
-              onClick={() => onApproveGenerated(experiment)}
-              disabled={
-                !evaluation.evalSetupThreadId ||
-                evaluation.generatedScriptApproved
-              }
-              className="mt-4 w-full rounded-xl bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {evaluation.generatedScriptApproved
-                ? "Generated eval approved"
-                : "Approve generated eval"}
-            </button>
+            {evaluation.proposedContract ? (
+              <div className="mt-3 divide-y divide-zinc-200/70 text-sm">
+                <div className="flex items-center justify-between gap-3 py-2 first:pt-0">
+                  <span className="text-zinc-500">Proposed script</span>
+                  <span className="truncate font-mono font-medium text-zinc-900">
+                    {evaluation.proposedContract.scriptPath}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3 py-2">
+                  <span className="text-zinc-500">Command</span>
+                  <span className="truncate font-mono font-medium text-zinc-900">
+                    {evaluation.proposedContract.runCommand}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3 py-2">
+                  <span className="text-zinc-500">Score</span>
+                  <span className="font-medium text-zinc-900">
+                    {evaluation.proposedContract.scoreName}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3 py-2 last:pb-0">
+                  <span className="text-zinc-500">Direction</span>
+                  <span className="font-medium text-zinc-900">
+                    {directionLabel(evaluation.proposedContract.scoreDirection)}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <p className="mt-3 text-sm leading-relaxed text-zinc-500">
+                The setup agent will propose an eval contract before approval.
+              </p>
+            )}
+	          <button
+	            type="button"
+	            onClick={() => onApproveGenerated(experiment)}
+	            disabled={
+	              !evaluation.evalSetupThreadId ||
+	              !evaluation.proposedContract ||
+	              evaluation.generatedScriptApproved ||
+	              isEvalSetupPending
+	            }
+	            className="mt-4 w-full rounded-xl bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+	          >
+	            {pendingAction === "approve"
+	              ? "Writing..."
+	              : evaluation.generatedScriptApproved
+	                ? "Generated eval approved"
+	                : "Approve & write eval"}
+	          </button>
           </section>
         )}
       </aside>
@@ -1657,6 +1787,7 @@ function AgentCollab({
 
 function ExperimentDetail({
   experiment,
+  evalSetupPendingAction,
   onBack,
   onStart,
   onApprove,
@@ -1669,6 +1800,7 @@ function ExperimentDetail({
   onNotify,
 }: {
   experiment: Experiment;
+  evalSetupPendingAction?: EvalSetupPendingAction;
   onBack: () => void;
   onStart: (experiment: Experiment) => void;
   onApprove: (experiment: Experiment) => void;
@@ -1704,6 +1836,7 @@ function ExperimentDetail({
         return (
           <EvaluationPanel
             experiment={experiment}
+            pendingAction={evalSetupPendingAction}
             onChange={onUpdateEvaluation}
             onStartInterview={onStartEvalInterview}
             onSendSetupReply={onSendEvalSetupReply}
@@ -1902,6 +2035,10 @@ export default function Dashboard({
   const [showCreate, setShowCreate] = useState(false);
   const [deleteFor, setDeleteFor] = useState<Experiment | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [evalSetupPending, setEvalSetupPending] = useState<{
+    experimentId: string;
+    action: EvalSetupPendingAction;
+  } | null>(null);
   const didMountRef = useRef(false);
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
 
@@ -1929,6 +2066,10 @@ export default function Dashboard({
   const needsInputCount = items.filter((e) => e.status === "needs-input").length;
   const visible = tab === "all" ? items : items.filter((e) => e.status === tab);
   const selected = items.find((experiment) => experiment.id === selectedId);
+  const selectedEvalSetupPendingAction =
+    selected && evalSetupPending?.experimentId === selected.id
+      ? evalSetupPending.action
+      : undefined;
 
   const handleCreate = (draft: {
     repo: string;
@@ -2030,9 +2171,21 @@ export default function Dashboard({
                 ...merged,
                 evalSetupThreadId: undefined,
                 generatedScriptApproved: undefined,
+                proposedContract: undefined,
                 messages: [],
               }
-            : merged,
+            : patch.mode === "generated" && e.evaluation.mode !== "generated"
+              ? {
+                  ...merged,
+                  scriptPath: "",
+                  runCommand: "",
+                  scoreName: "",
+                  evalSetupThreadId: undefined,
+                  generatedScriptApproved: undefined,
+                  proposedContract: undefined,
+                  messages: [],
+                }
+              : merged,
         );
 
         return {
@@ -2051,140 +2204,224 @@ export default function Dashboard({
     );
   };
 
-  const handleStartEvalInterview = (experiment: Experiment) => {
-    const threadId =
-      experiment.evaluation.evalSetupThreadId ?? `eval-setup-${Date.now()}`;
+  const handleStartEvalInterview = async (experiment: Experiment) => {
+    if (evalSetupPending) {
+      notify("Codex is already working");
+      return;
+    }
 
-    setItems((prev) =>
-      prev.map((e) => {
-        if (e.id !== experiment.id) return e;
+    setEvalSetupPending({ experimentId: experiment.id, action: "start" });
+    notify("Starting eval setup interview...");
+    try {
+      const result = await startEvalInterviewAction({
+        experimentId: experiment.id,
+        repoPath: experiment.repo,
+        title: experiment.title,
+        objective: experiment.objective,
+      });
 
-        const messages =
-          e.evaluation.messages.length > 0
-            ? e.evaluation.messages
-            : [
-                {
-                  id: `eval-agent-${Date.now()}`,
-                  author: "agent" as const,
-                  text: "I will help create the eval script. What should the score measure, and what output should count as better?",
-                  time: "Just now",
-                },
-              ];
-        const nextEvaluation = normalizeEvaluation({
-          ...e.evaluation,
-          mode: "generated",
-          evalSetupThreadId: threadId,
-          messages,
-        });
+      if (!result.ok) {
+        notify(result.error);
+        return;
+      }
 
-        return {
-          ...e,
-          evaluation: nextEvaluation,
-          metrics: refreshEvaluationMetrics(e.metrics, nextEvaluation),
-        };
-      }),
-    );
-    notify("Eval setup interview started");
+      const { evalSetupThreadId, response } = result.data;
+      const proposedContract =
+        response.status === "ready" ? response.proposedContract : undefined;
+
+      setItems((prev) =>
+        prev.map((e) => {
+          if (e.id !== experiment.id) return e;
+
+          const nextEvaluation = normalizeEvaluation({
+            ...e.evaluation,
+            mode: "generated",
+            scriptPath: "",
+            runCommand: "",
+            scoreName: "",
+            evalSetupThreadId,
+            generatedScriptApproved: undefined,
+            proposedContract,
+            messages: [
+              ...e.evaluation.messages,
+              createEvalSetupAgentMessage(response),
+            ],
+          });
+
+          return {
+            ...e,
+            evaluation: nextEvaluation,
+            metrics: refreshEvaluationMetrics(e.metrics, nextEvaluation),
+          };
+        }),
+      );
+      notify(
+        response.status === "ready"
+          ? "Eval contract proposed"
+          : "Eval setup interview started",
+      );
+    } finally {
+      setEvalSetupPending((current) =>
+        current?.experimentId === experiment.id && current.action === "start"
+          ? null
+          : current,
+      );
+    }
   };
 
-  const handleEvalSetupReply = (experiment: Experiment, text: string) => {
-    const threadId =
-      experiment.evaluation.evalSetupThreadId ?? `eval-setup-${Date.now()}`;
+  const handleEvalSetupReply = async (experiment: Experiment, text: string) => {
+    if (evalSetupPending) {
+      notify("Codex is already working");
+      return;
+    }
 
-    setItems((prev) =>
-      prev.map((e) => {
-        if (e.id !== experiment.id) return e;
+    const threadId = experiment.evaluation.evalSetupThreadId;
 
-        const opening =
-          e.evaluation.messages.length === 0
-            ? [
-                {
-                  id: `eval-agent-${Date.now()}`,
-                  author: "agent" as const,
-                  text: "I will keep this interview scoped to creating the eval script.",
-                  time: "Just now",
-                },
-              ]
-            : [];
-        const nextEvaluation = normalizeEvaluation({
-          ...e.evaluation,
-          mode: "generated",
-          evalSetupThreadId: threadId,
-          messages: [
-            ...opening,
-            ...e.evaluation.messages,
-            {
-              id: `eval-user-${Date.now()}`,
-              author: "user",
-              text,
-              time: "Just now",
-            },
-            {
-              id: `eval-agent-reply-${Date.now()}`,
-              author: "agent",
-              text: "Captured. I will use that to draft the eval script contract for this repository.",
-              time: "Just now",
-            },
-          ],
-        });
+    if (!threadId) {
+      notify("Start the eval setup interview first");
+      return;
+    }
 
-        return {
-          ...e,
-          evaluation: nextEvaluation,
-          metrics: refreshEvaluationMetrics(e.metrics, nextEvaluation),
-        };
-      }),
-    );
-    notify("Eval setup reply sent");
+    setEvalSetupPending({ experimentId: experiment.id, action: "reply" });
+    notify("Sending eval setup reply...");
+    try {
+      const result = await sendEvalSetupReplyAction({
+        threadId,
+        repoPath: experiment.repo,
+        reply: text,
+      });
+
+      if (!result.ok) {
+        notify(result.error);
+        return;
+      }
+
+      const { response } = result.data;
+      const proposedContract =
+        response.status === "ready" ? response.proposedContract : undefined;
+
+      setItems((prev) =>
+        prev.map((e) => {
+          if (e.id !== experiment.id) return e;
+
+          const nextEvaluation = normalizeEvaluation({
+            ...e.evaluation,
+            mode: "generated",
+            scriptPath: "",
+            runCommand: "",
+            scoreName: "",
+            generatedScriptApproved: undefined,
+            proposedContract,
+            messages: [
+              ...e.evaluation.messages,
+              {
+                id: `eval-user-${Date.now()}`,
+                author: "user",
+                text,
+                time: "Just now",
+              },
+              createEvalSetupAgentMessage(response),
+            ],
+          });
+
+          return {
+            ...e,
+            evaluation: nextEvaluation,
+            metrics: refreshEvaluationMetrics(e.metrics, nextEvaluation),
+          };
+        }),
+      );
+      notify(
+        response.status === "ready" ? "Eval contract proposed" : "Reply sent",
+      );
+    } finally {
+      setEvalSetupPending((current) =>
+        current?.experimentId === experiment.id && current.action === "reply"
+          ? null
+          : current,
+      );
+    }
   };
 
-  const handleApproveGeneratedEvaluation = (experiment: Experiment) => {
+  const handleApproveGeneratedEvaluation = async (experiment: Experiment) => {
+    if (evalSetupPending) {
+      notify("Codex is already working");
+      return;
+    }
+
     if (!experiment.evaluation.evalSetupThreadId) {
       notify("Start the eval setup interview first");
       return;
     }
 
-    setItems((prev) =>
-      prev.map((e) => {
-        if (e.id !== experiment.id) return e;
+    if (!experiment.evaluation.proposedContract) {
+      notify("Wait for the setup agent to propose an eval contract");
+      return;
+    }
 
-        const scriptPath =
-          e.evaluation.scriptPath.trim() ||
-          `.optimizer/evals/${slugify(e.title)}.eval.ts`;
-        const nextEvaluation = normalizeEvaluation({
-          ...e.evaluation,
-          mode: "generated",
-          scriptPath,
-          runCommand:
-            e.evaluation.runCommand.trim() || `pnpm tsx ${scriptPath}`,
-          scoreName: e.evaluation.scoreName.trim() || "score",
-          generatedScriptApproved: true,
-          messages: [
-            ...e.evaluation.messages,
-            {
-              id: `eval-approved-${Date.now()}`,
-              author: "agent",
-              text: `Generated eval approved at ${scriptPath}. The runtime agent can now use this eval contract.`,
-              time: "Just now",
-            },
-          ],
-        });
+    setEvalSetupPending({ experimentId: experiment.id, action: "approve" });
+    notify("Writing generated eval...");
+    try {
+      const result = await approveGeneratedEvaluationAction({
+        threadId: experiment.evaluation.evalSetupThreadId,
+        repoPath: experiment.repo,
+        proposedContract: experiment.evaluation.proposedContract,
+      });
 
-        return {
-          ...e,
-          evaluation: nextEvaluation,
-          metricValue:
-            e.status === "setup"
-              ? nextEvaluation.status === "ready"
-                ? "ready"
-                : "needed"
-              : e.metricValue,
-          targetValue: directionLabel(nextEvaluation.scoreDirection),
-          metrics: refreshEvaluationMetrics(e.metrics, nextEvaluation),
-        };
-      }),
-    );
-    notify("Generated eval approved");
+      if (!result.ok) {
+        notify(result.error);
+        return;
+      }
+
+      const { response } = result.data;
+      const contract = getEvalSetupContract(response);
+
+      if (!contract) {
+        notify("Codex did not return a generated eval contract");
+        return;
+      }
+
+      setItems((prev) =>
+        prev.map((e) => {
+          if (e.id !== experiment.id) return e;
+
+          const nextEvaluation = normalizeEvaluation({
+            ...e.evaluation,
+            mode: "generated",
+            scriptPath: contract.scriptPath,
+            runCommand: contract.runCommand,
+            scoreName: contract.scoreName,
+            scoreDirection: contract.scoreDirection,
+            proposedContract: contract,
+            generatedScriptApproved: true,
+            messages: [
+              ...e.evaluation.messages,
+              createEvalSetupAgentMessage(response),
+            ],
+          });
+
+          return {
+            ...e,
+            evaluation: nextEvaluation,
+            metricValue:
+              e.status === "setup"
+                ? nextEvaluation.status === "ready"
+                  ? "ready"
+                  : "needed"
+                : e.metricValue,
+            targetValue: directionLabel(nextEvaluation.scoreDirection),
+            metrics: refreshEvaluationMetrics(e.metrics, nextEvaluation),
+          };
+        }),
+      );
+      notify("Generated eval approved");
+    } finally {
+      setEvalSetupPending((current) =>
+        current?.experimentId === experiment.id && current.action === "approve"
+          ? null
+          : current,
+      );
+    }
   };
 
   const handleStartExperiment = (experiment: Experiment) => {
@@ -2521,6 +2758,7 @@ export default function Dashboard({
         <ExperimentDetail
           key={selected.id}
           experiment={selected}
+          evalSetupPendingAction={selectedEvalSetupPendingAction}
           onBack={() => setSelectedId(null)}
           onStart={handleStartExperiment}
           onApprove={handleApprove}
