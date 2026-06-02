@@ -48,11 +48,11 @@ function StatusBadge({ status }: { status: Status }) {
 export default function ExperimentCard({
   experiment,
   onDelete,
-  onReviewLogs,
+  onOpen,
 }: {
   experiment: Experiment;
   onDelete: (experiment: Experiment) => void;
-  onReviewLogs: (experiment: Experiment) => void;
+  onOpen: (experiment: Experiment) => void;
 }) {
   const needsInput = experiment.status === "needs-input";
 
@@ -83,12 +83,18 @@ export default function ExperimentCard({
           </div>
         </div>
 
-        <h3 className="mt-3 text-[17px] font-semibold tracking-tight text-zinc-900">
-          {experiment.title}
-        </h3>
-        <p className="mt-1.5 text-sm leading-relaxed text-zinc-500">
-          {experiment.description}
-        </p>
+        <button
+          type="button"
+          onClick={() => onOpen(experiment)}
+          className="mt-3 block text-left outline-none focus-visible:ring-2 focus-visible:ring-blue-100"
+        >
+          <h3 className="text-[17px] font-semibold tracking-tight text-zinc-900 transition-colors group-hover:text-blue-700">
+            {experiment.title}
+          </h3>
+          <p className="mt-1.5 text-sm leading-relaxed text-zinc-500">
+            {experiment.description}
+          </p>
+        </button>
 
         <div className="mt-auto pt-4">
           <div className="h-px bg-zinc-100" />
@@ -119,18 +125,23 @@ export default function ExperimentCard({
           {needsInput ? (
             <button
               type="button"
-              onClick={() => onReviewLogs(experiment)}
+              onClick={() => onOpen(experiment)}
               className="inline-flex items-center gap-1 text-sm font-medium text-zinc-700 transition-colors hover:text-blue-700"
             >
-              Review logs
+              Open workspace
               <ArrowRightIcon className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
             </button>
           ) : (
-            <div className="flex items-center">
+            <button
+              type="button"
+              onClick={() => onOpen(experiment)}
+              className="flex items-center gap-2 text-sm font-medium text-zinc-700 transition-colors hover:text-blue-700"
+            >
               <span className="font-mono text-xs text-zinc-400">
                 {experiment.timing}
               </span>
-            </div>
+              <ArrowRightIcon className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+            </button>
           )}
         </div>
       </div>
