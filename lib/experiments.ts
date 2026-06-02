@@ -38,7 +38,7 @@ export type AgentMessage = {
 export type ExperimentEvaluation = {
   mode: EvaluationMode;
   scriptPath: string;
-  scoreDirection: ScoreDirection;
+  scoreDirection: ScoreDirection | null;
   runCommand: string;
   scoreName: string;
   status: EvaluationStatus;

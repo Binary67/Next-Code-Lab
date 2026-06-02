@@ -106,7 +106,7 @@ function getEvaluationStatus(
   const hasDirection = Boolean(evaluation.scoreDirection);
 
   if (hasScript && hasCommand && hasDirection) return "ready";
-  if (hasScript || hasCommand || !hasDirection) return "incomplete";
+  if (hasScript || hasCommand || hasDirection) return "incomplete";
   return "missing";
 }
 
@@ -121,14 +121,17 @@ function getMissingEvaluationFields(evaluation: ExperimentEvaluation) {
 function normalizeEvaluation(
   evaluation: ExperimentEvaluation,
 ): ExperimentEvaluation {
+  const scoreName = evaluation.scoreName.trim();
   const next = {
     ...evaluation,
-    scoreName: evaluation.scoreName.trim() || "score",
+    scoreName,
   };
+  const status = getEvaluationStatus(next);
 
   return {
     ...next,
-    status: getEvaluationStatus(next),
+    scoreName: status === "ready" ? scoreName || "score" : scoreName,
+    status,
   };
 }
 
@@ -138,7 +141,8 @@ function evaluationStatusLabel(status: EvaluationStatus) {
   return "Needed";
 }
 
-function directionLabel(direction: ScoreDirection) {
+function directionLabel(direction: ScoreDirection | null) {
+  if (!direction) return "Not set";
   return direction === "minimize" ? "Minimize" : "Maximize";
 }
 
@@ -200,7 +204,10 @@ function refreshEvaluationMetrics(
       return {
         ...metric,
         value: evaluation.status === "ready" ? evaluation.scoreName : "-",
-        detail: directionLabel(evaluation.scoreDirection),
+        detail:
+          evaluation.status === "ready"
+            ? directionLabel(evaluation.scoreDirection)
+            : "Not set",
       };
     }
 
@@ -751,7 +758,10 @@ function DetailStatusStrip({ experiment }: { experiment: Experiment }) {
       label: "Score",
       value:
         evaluation.status === "ready" ? evaluation.scoreName || "score" : "Not set",
-      detail: directionLabel(evaluation.scoreDirection),
+      detail:
+        evaluation.status === "ready"
+          ? directionLabel(evaluation.scoreDirection)
+          : "Not set",
     },
     {
       label: "Latest trial",
@@ -799,7 +809,7 @@ function DetailTabs({
   onChange: (tab: DetailTabId) => void;
 }) {
   return (
-    <nav className="flex min-w-0 gap-5 overflow-x-auto border-t border-zinc-200/70 px-5 md:px-6">
+    <nav className="flex min-w-0 shrink-0 gap-5 overflow-x-auto border-t border-zinc-200/70 px-5 scrollbar-hidden md:px-6">
       {DETAIL_TABS.map((tab) => {
         const selected = active === tab.id;
         const showInput = tab.id === "collab" && needsInput;
@@ -1076,6 +1086,10 @@ function EvaluationPanel({
     !evaluation.generatedScriptApproved && !isEvalSetupPending;
   const missingFields = getMissingEvaluationFields(evaluation);
   const isReady = evaluation.status === "ready";
+  const hasActiveEvalContract = evaluation.mode === "existing" || isReady;
+  const unsetContractValue = (
+    <span className="shrink-0 font-medium text-zinc-500">Not set</span>
+  );
   const modeOptions: { id: EvaluationMode; label: string; detail: string }[] = [
     {
       id: "existing",
@@ -1102,8 +1116,8 @@ function EvaluationPanel({
   const sendReply = () => submitReply(reply);
 
   return (
-    <section className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
-      <div className="space-y-5">
+    <section className="grid h-full min-h-0 gap-5 overflow-y-auto scrollbar-hidden lg:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)] lg:overflow-hidden">
+      <div className="flex min-h-0 flex-col gap-5">
         <section className="rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -1260,7 +1274,7 @@ function EvaluationPanel({
             )}
           </section>
         ) : (
-          <section className="flex min-h-[480px] flex-col overflow-hidden rounded-2xl bg-zinc-50/70 ring-1 ring-zinc-950/5">
+          <section className="flex min-h-[480px] flex-col overflow-hidden rounded-2xl bg-zinc-50/70 ring-1 ring-zinc-950/5 lg:min-h-0 lg:flex-1">
             <header className="border-b border-zinc-200/70 bg-white/55 px-4 py-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -1287,7 +1301,7 @@ function EvaluationPanel({
               </div>
             </header>
 
-            <div className="flex-1 space-y-4 overflow-y-auto px-4 py-5">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-5 scrollbar-hidden">
 	              {evaluation.messages.length === 0 ? (
 	                <div className="rounded-xl bg-white/70 px-4 py-6 text-center ring-1 ring-zinc-950/5">
 	                  <p className="text-sm font-medium text-zinc-900">
@@ -1408,27 +1422,43 @@ function EvaluationPanel({
           <div className="mt-3 divide-y divide-zinc-200/70 text-sm">
             <div className="flex items-center justify-between gap-3 py-2 first:pt-0">
               <span className="text-zinc-500">Script</span>
-              <span className="truncate font-mono font-medium text-zinc-900">
-                {evaluation.scriptPath || "Not set"}
-              </span>
+              {hasActiveEvalContract && evaluation.scriptPath ? (
+                <span className="truncate font-mono font-medium text-zinc-900">
+                  {evaluation.scriptPath}
+                </span>
+              ) : (
+                unsetContractValue
+              )}
             </div>
             <div className="flex items-center justify-between gap-3 py-2">
               <span className="text-zinc-500">Command</span>
-              <span className="truncate font-mono font-medium text-zinc-900">
-                {evaluation.runCommand || "Not set"}
-              </span>
+              {hasActiveEvalContract && evaluation.runCommand ? (
+                <span className="truncate font-mono font-medium text-zinc-900">
+                  {evaluation.runCommand}
+                </span>
+              ) : (
+                unsetContractValue
+              )}
             </div>
             <div className="flex items-center justify-between gap-3 py-2">
               <span className="text-zinc-500">Score</span>
-              <span className="font-medium text-zinc-900">
-                {evaluation.scoreName || "score"}
-              </span>
+              {hasActiveEvalContract && evaluation.scoreName ? (
+                <span className="font-medium text-zinc-900">
+                  {evaluation.scoreName}
+                </span>
+              ) : (
+                unsetContractValue
+              )}
             </div>
             <div className="flex items-center justify-between gap-3 py-2 last:pb-0">
               <span className="text-zinc-500">Direction</span>
-              <span className="font-medium text-zinc-900">
-                {directionLabel(evaluation.scoreDirection)}
-              </span>
+              {hasActiveEvalContract && evaluation.scoreDirection ? (
+                <span className="font-medium text-zinc-900">
+                  {directionLabel(evaluation.scoreDirection)}
+                </span>
+              ) : (
+                unsetContractValue
+              )}
             </div>
           </div>
         </section>
@@ -1685,7 +1715,7 @@ function AgentCollab({
         </div>
       </header>
 
-      <div className="flex-1 space-y-4 overflow-y-auto px-4 py-5">
+      <div className="flex-1 space-y-4 overflow-y-auto px-4 py-5 scrollbar-hidden">
         {experiment.agentMessages.length === 0 && !experiment.pendingQuestion && (
           <EmptyState title="Runtime collaboration starts after the experiment starts." />
         )}
@@ -1882,9 +1912,9 @@ function ExperimentDetail({
         role="dialog"
         aria-modal="true"
         aria-labelledby="experiment-detail-title"
-        className="relative z-10 flex max-h-[calc(100vh-2.5rem)] w-full max-w-[1760px] animate-scale-in flex-col overflow-hidden rounded-[28px] border border-white/70 bg-white/80 shadow-[0_24px_80px_rgba(15,23,42,0.18)] ring-1 ring-zinc-950/5 backdrop-blur-2xl md:max-h-[calc(100vh-4rem)]"
+        className="relative z-10 flex h-[calc(100vh-2.5rem)] w-full max-w-[1760px] animate-scale-in flex-col overflow-hidden rounded-[28px] border border-white/70 bg-white/80 shadow-[0_24px_80px_rgba(15,23,42,0.18)] ring-1 ring-zinc-950/5 backdrop-blur-2xl md:h-[calc(100vh-4rem)]"
       >
-        <header className="border-b border-zinc-200/70 bg-white/45 px-5 py-4 md:px-6 md:py-5">
+        <header className="shrink-0 border-b border-zinc-200/70 bg-white/45 px-5 py-4 md:px-6 md:py-5">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0 flex-1">
               <button
@@ -1987,7 +2017,13 @@ function ExperimentDetail({
           onChange={setDetailTab}
         />
 
-        <div className="min-h-0 flex-1 overflow-y-auto bg-white/55 px-5 py-4 md:px-6">
+        <div
+          className={`flex min-h-0 flex-1 flex-col bg-white/55 px-5 py-4 md:px-6 ${
+            detailTab === "evaluation"
+              ? "overflow-hidden"
+              : "overflow-y-auto scrollbar-hidden"
+          }`}
+        >
           {detailTab !== "collab" && (
             <PendingInputBanner
               experiment={experiment}
@@ -1996,7 +2032,7 @@ function ExperimentDetail({
             />
           )}
 
-          <div className="w-full">{activePanel}</div>
+          <div className="min-h-0 w-full flex-1">{activePanel}</div>
         </div>
       </section>
     </div>
@@ -2094,7 +2130,7 @@ export default function Dashboard({
       evaluation: {
         mode: "existing",
         scriptPath: "",
-        scoreDirection: "minimize",
+        scoreDirection: null,
         runCommand: "",
         scoreName: "",
         status: "missing",
@@ -2180,6 +2216,7 @@ export default function Dashboard({
                   scriptPath: "",
                   runCommand: "",
                   scoreName: "",
+                  scoreDirection: null,
                   evalSetupThreadId: undefined,
                   generatedScriptApproved: undefined,
                   proposedContract: undefined,
@@ -2239,6 +2276,7 @@ export default function Dashboard({
             scriptPath: "",
             runCommand: "",
             scoreName: "",
+            scoreDirection: null,
             evalSetupThreadId,
             generatedScriptApproved: undefined,
             proposedContract,
@@ -2310,6 +2348,7 @@ export default function Dashboard({
             scriptPath: "",
             runCommand: "",
             scoreName: "",
+            scoreDirection: null,
             generatedScriptApproved: undefined,
             proposedContract,
             messages: [

@@ -16,6 +16,15 @@ body {
   color: #18181b;
 }
 
+.scrollbar-hidden {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
+
 /* ---- Motion ---- */
 @keyframes fade-in {
   from {
