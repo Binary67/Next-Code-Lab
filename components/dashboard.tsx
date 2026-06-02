@@ -30,6 +30,7 @@ import {
 
 type NavId = "experiments" | "repositories" | "settings";
 type TabId = "all" | Status;
+type SourceType = "git" | "local";
 
 const PRIMARY_NAV = [
   { id: "experiments", label: "Experiments", Icon: FlaskIcon },
@@ -93,21 +94,26 @@ function CreateModal({
     repo: string;
     title: string;
     description: string;
-    status: Status;
   }) => void;
 }) {
+  const [sourceType, setSourceType] = useState<SourceType>("git");
   const [repo, setRepo] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [status, setStatus] = useState<Status>("running");
+  const canCreate = Boolean(repo.trim() && title.trim() && description.trim());
+  const sourceLabel = sourceType === "git" ? "Git repository" : "Local path";
+  const sourcePlaceholder =
+    sourceType === "git"
+      ? "https://github.com/acme/frontend-monorepo.git"
+      : "/Users/frank/Desktop/Projects/frontend-monorepo";
 
   return (
     <Overlay onClose={onClose}>
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          if (!title.trim()) return;
-          onCreate({ repo, title, description, status });
+          if (!canCreate) return;
+          onCreate({ repo, title, description });
         }}
       >
         <header className="flex items-center justify-between border-b border-zinc-100 px-5 py-4">
@@ -124,13 +130,38 @@ function CreateModal({
 
         <div className="space-y-4 px-5 py-5">
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-zinc-700">
-              Repository
-            </label>
+            <div className="mb-1.5 flex items-center justify-between gap-3">
+              <label
+                htmlFor="experiment-source"
+                className="block text-sm font-medium text-zinc-700"
+              >
+                {sourceLabel}
+              </label>
+              <div className="grid grid-cols-2 rounded-lg border border-zinc-200 bg-zinc-50 p-0.5">
+                {(["git", "local"] as SourceType[]).map((type) => (
+                  <button
+                    key={type}
+                    type="button"
+                    aria-pressed={sourceType === type}
+                    onClick={() => setSourceType(type)}
+                    className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                      sourceType === type
+                        ? "bg-white text-blue-700 shadow-sm ring-1 ring-zinc-200"
+                        : "text-zinc-500 hover:text-zinc-700"
+                    }`}
+                  >
+                    {type === "git" ? "Git repo" : "Local path"}
+                  </button>
+                ))}
+              </div>
+            </div>
             <input
+              id="experiment-source"
               value={repo}
               onChange={(e) => setRepo(e.target.value)}
-              placeholder="frontend-monorepo"
+              placeholder={sourcePlaceholder}
+              required
+              autoFocus
               className={`${inputClass} font-mono`}
             />
           </div>
@@ -142,7 +173,7 @@ function CreateModal({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Bundle Size Reduction"
-              autoFocus
+              required
               className={inputClass}
             />
           </div>
@@ -155,29 +186,9 @@ function CreateModal({
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
               placeholder="What should the agent optimize, and by how much?"
+              required
               className={`${inputClass} resize-none`}
             />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-zinc-700">
-              Initial state
-            </label>
-            <div className="grid grid-cols-3 gap-1.5">
-              {(["running", "needs-input", "completed"] as Status[]).map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => setStatus(s)}
-                  className={`rounded-lg border px-2 py-1.5 text-xs font-medium capitalize transition-colors ${
-                    status === s
-                      ? "border-blue-600 bg-blue-50 text-blue-700"
-                      : "border-zinc-200 text-zinc-500 hover:bg-zinc-50"
-                  }`}
-                >
-                  {s === "needs-input" ? "Needs input" : s}
-                </button>
-              ))}
-            </div>
           </div>
         </div>
 
@@ -191,7 +202,7 @@ function CreateModal({
           </button>
           <button
             type="submit"
-            disabled={!title.trim()}
+            disabled={!canCreate}
             className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-3.5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <PlusIcon className="h-4 w-4" />
@@ -939,17 +950,15 @@ export default function Dashboard() {
     repo: string;
     title: string;
     description: string;
-    status: Status;
   }) => {
     const title = draft.title.trim();
     const base = {
       id: `${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${items.length}`,
-      repo: draft.repo.trim() || "untitled-repo",
+      repo: draft.repo.trim(),
       title,
-      description: draft.description.trim() || "No objective provided yet.",
+      description: draft.description.trim(),
     };
-    const progress = draft.status === "completed" ? "100%" : "0%";
-    const trialStatus = draft.status;
+    const progress = "0%";
     const detail = {
       objective: base.description,
       targetLabel: "Target",
@@ -963,7 +972,7 @@ export default function Dashboard() {
         { label: "Trials", value: "1", detail: "created now" },
         { label: "Spend", value: "$0.00", detail: "0 tokens" },
       ],
-      trend: [{ label: "T-01", value: draft.status === "completed" ? 100 : 0 }],
+      trend: [{ label: "T-01", value: 0 }],
       trials: [
         {
           id: "T-01",
@@ -971,7 +980,7 @@ export default function Dashboard() {
           summary: base.description,
           metricValue: progress,
           duration: "Just now",
-          status: trialStatus,
+          status: "running",
         },
       ],
       agentMessages: [
@@ -982,14 +991,6 @@ export default function Dashboard() {
           time: "Just now",
         },
       ],
-      pendingQuestion:
-        draft.status === "needs-input"
-          ? {
-              title: "Pending input",
-              body: "What should the agent verify before continuing?",
-              options: ["Review changes", "Resume"],
-            }
-          : undefined,
     } satisfies Pick<
       Experiment,
       | "objective"
@@ -1000,38 +1001,16 @@ export default function Dashboard() {
       | "trend"
       | "trials"
       | "agentMessages"
-      | "pendingQuestion"
     >;
 
-    let experiment: Experiment;
-    if (draft.status === "running") {
-      experiment = {
-        ...base,
-        ...detail,
-        status: "running",
-        metricLabel: "Progress",
-        metricValue: "0%",
-        timing: "just started",
-      };
-    } else if (draft.status === "needs-input") {
-      experiment = {
-        ...base,
-        ...detail,
-        status: "needs-input",
-        metricLabel: "Status",
-        metricValue: "Pending",
-      };
-    } else {
-      experiment = {
-        ...base,
-        ...detail,
-        status: "completed",
-        metricLabel: "Result",
-        metricValue: "Shipped",
-        delta: { dir: "down", value: "0%" },
-        timing: "just now",
-      };
-    }
+    const experiment: Experiment = {
+      ...base,
+      ...detail,
+      status: "running",
+      metricLabel: "Progress",
+      metricValue: "0%",
+      timing: "just started",
+    };
 
     setItems((prev) => [experiment, ...prev]);
     setTab("all");
