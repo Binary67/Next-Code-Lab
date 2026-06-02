@@ -266,7 +266,7 @@ export function ExperimentDetail({
           />
         );
       case "changes":
-        return <ChangesPanel changes={experiment.changes} />;
+        return <ChangesPanel experiment={experiment} />;
       case "overview":
       default:
         return (

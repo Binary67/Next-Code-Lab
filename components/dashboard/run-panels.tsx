@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { readTrialDiff } from "@/app/actions";
 import type {
   Experiment,
-  ExperimentChange,
   ExperimentTrial,
   ProgressStep,
 } from "@/lib/experiments";
@@ -12,8 +12,6 @@ import {
   WarningIcon,
 } from "@/components/icons";
 import {
-  CHANGE_TONE,
-  ComingSoonPanel,
   EmptyState,
   PROGRESS_TONE,
   TRIAL_TONE,
@@ -29,6 +27,164 @@ function evalProgressLabel(trial: ExperimentTrial, evalBudgetPerTrial: number) {
   return `${trial.evalsUsed} of ${evalBudgetPerTrial} ${
     evalBudgetPerTrial === 1 ? "eval" : "evals"
   }`;
+}
+
+type TrialDiff = {
+  trialId: string;
+  targetRef: string;
+  diff: string;
+};
+
+type TrialDiffState =
+  | { status: "idle" }
+  | { status: "loading"; trialId: string }
+  | { status: "loaded"; key: string; data: TrialDiff }
+  | { status: "empty"; message: string }
+  | { status: "error"; key: string; message: string };
+
+function formatScoreValue(value: number) {
+  return Number.isInteger(value)
+    ? String(value)
+    : String(Number(value.toFixed(6)));
+}
+
+function getBestTrial(
+  trials: ExperimentTrial[],
+  direction: Experiment["evaluation"]["scoreDirection"],
+) {
+  const scored = trials.filter(
+    (trial): trial is ExperimentTrial & { score: number } =>
+      Boolean(trial.improved && Number.isFinite(trial.score)),
+  );
+
+  if (scored.length === 0) {
+    return null;
+  }
+
+  if (!direction) {
+    return scored[0];
+  }
+
+  return scored.reduce((best, trial) => {
+    const better =
+      direction === "minimize" ? trial.score < best.score : trial.score > best.score;
+    return better ? trial : best;
+  });
+}
+
+function getTrialDelta(
+  trial: ExperimentTrial,
+  baselineScore: number | undefined,
+) {
+  if (!Number.isFinite(trial.score) || !Number.isFinite(baselineScore)) {
+    return null;
+  }
+
+  const delta = (trial.score as number) - (baselineScore as number);
+  const sign = delta > 0 ? "+" : delta < 0 ? "-" : "";
+
+  return {
+    value: `${sign}${formatScoreValue(Math.abs(delta))}`,
+    raw: delta,
+  };
+}
+
+function deltaTone(
+  delta: number,
+  direction: Experiment["evaluation"]["scoreDirection"],
+) {
+  if (!direction || delta === 0) {
+    return "text-zinc-500";
+  }
+
+  const improved = direction === "maximize" ? delta > 0 : delta < 0;
+  return improved ? "text-emerald-700" : "text-rose-700";
+}
+
+function diffLineClass(line: string) {
+  if (line.startsWith("diff --git")) {
+    return "bg-zinc-900 text-white";
+  }
+
+  if (
+    line.startsWith("index ") ||
+    line.startsWith("--- ") ||
+    line.startsWith("+++ ")
+  ) {
+    return "bg-zinc-100 text-zinc-600";
+  }
+
+  if (line.startsWith("@@")) {
+    return "bg-blue-50 text-blue-700";
+  }
+
+  if (line.startsWith("+")) {
+    return "bg-emerald-50 text-emerald-800";
+  }
+
+  if (line.startsWith("-")) {
+    return "bg-rose-50 text-rose-800";
+  }
+
+  return "text-zinc-600";
+}
+
+function DiffContent({ state }: { state: TrialDiffState }) {
+  if (state.status === "idle") {
+    return (
+      <div className="mt-5">
+        <EmptyState title="Select a trial to inspect its diff." />
+      </div>
+    );
+  }
+
+  if (state.status === "loading") {
+    return (
+      <div className="mt-5 space-y-2 rounded-xl bg-zinc-50/70 p-4 ring-1 ring-zinc-950/5">
+        <div className="h-3 w-2/5 rounded-full bg-zinc-200" />
+        <div className="h-3 w-4/5 rounded-full bg-zinc-200" />
+        <div className="h-3 w-3/5 rounded-full bg-zinc-200" />
+      </div>
+    );
+  }
+
+  if (state.status === "empty") {
+    return (
+      <div className="mt-5">
+        <EmptyState title={state.message} />
+      </div>
+    );
+  }
+
+  if (state.status === "error") {
+    return (
+      <div className="mt-5">
+        <EmptyState title="Could not load diff." body={state.message} />
+      </div>
+    );
+  }
+
+  const lines = state.data.diff.split("\n");
+
+  if (!state.data.diff.trim()) {
+    return (
+      <div className="mt-5">
+        <EmptyState title="No code changes in this trial." />
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-5 max-h-[32rem] overflow-auto rounded-xl bg-white text-xs ring-1 ring-zinc-950/10">
+      <pre className="min-w-max py-2 font-mono leading-5">
+        {lines.map((line, index) => (
+          <div key={`${state.data.targetRef}-${index}`} className={`px-4 ${diffLineClass(line)}`}>
+            {line === "" ? " " : line}
+          </div>
+        ))}
+      </pre>
+    </div>
+  );
 }
 
 function RunProgressSteps({ steps }: { steps: ProgressStep[] }) {
@@ -306,52 +462,288 @@ export function RunPanel({
   );
 }
 
-export function ChangesPanel({ changes }: { changes: ExperimentChange[] }) {
+export function ChangesPanel({ experiment }: { experiment: Experiment }) {
+  const scoreName =
+    experiment.evaluation.scoreName || experiment.metricLabel || "Score";
+  const bestTrial = getBestTrial(
+    experiment.trials,
+    experiment.evaluation.scoreDirection,
+  );
+  const defaultTrialId = bestTrial?.id ?? experiment.trials[0]?.id ?? null;
+  const [manualSelection, setManualSelection] = useState<{
+    experimentId: string;
+    trialId: string;
+  } | null>(null);
+  const [diffState, setDiffState] = useState<TrialDiffState>({
+    status: "idle",
+  });
+  const [diffCache, setDiffCache] = useState<Record<string, TrialDiff>>({});
+  const manualTrialId =
+    manualSelection?.experimentId === experiment.id
+      ? manualSelection.trialId
+      : null;
+  const selectedTrialId =
+    manualTrialId &&
+    experiment.trials.some((trial) => trial.id === manualTrialId)
+      ? manualTrialId
+      : defaultTrialId;
+  const selectedTrial =
+    experiment.trials.find((trial) => trial.id === selectedTrialId) ??
+    experiment.trials.find((trial) => trial.id === defaultTrialId) ??
+    null;
+  const selectedTrialTarget =
+    selectedTrial?.commitSha ?? selectedTrial?.branchName ?? "";
+  const selectedDiffKey =
+    selectedTrial && experiment.baseCommit && selectedTrialTarget
+      ? [
+          experiment.id,
+          experiment.baseCommit,
+          selectedTrial.id,
+          selectedTrialTarget,
+        ].join(":")
+      : null;
+  const cachedDiff = selectedDiffKey ? diffCache[selectedDiffKey] : undefined;
+  const renderedDiffState: TrialDiffState = (() => {
+    if (!selectedTrial) {
+      return { status: "idle" };
+    }
+
+    if (!selectedDiffKey) {
+      return { status: "empty", message: "No diff available." };
+    }
+
+    if (cachedDiff) {
+      return { status: "loaded", key: selectedDiffKey, data: cachedDiff };
+    }
+
+    if (diffState.status === "loaded" && diffState.key === selectedDiffKey) {
+      return diffState;
+    }
+
+    if (diffState.status === "error" && diffState.key === selectedDiffKey) {
+      return diffState;
+    }
+
+    return { status: "loading", trialId: selectedTrial.id };
+  })();
+
+  useEffect(() => {
+    if (!selectedTrial || !experiment.baseCommit || !selectedDiffKey) {
+      return;
+    }
+
+    if (cachedDiff) {
+      return;
+    }
+
+    let canceled = false;
+
+    readTrialDiff({
+      experimentId: experiment.id,
+      repoPath: experiment.repo,
+      baseCommit: experiment.baseCommit,
+      trialId: selectedTrial.id,
+      commitSha: selectedTrial.commitSha,
+      branchName: selectedTrial.branchName,
+    })
+      .then((result) => {
+        if (canceled) {
+          return;
+        }
+
+        if (result.ok) {
+          setDiffCache((current) => ({
+            ...current,
+            [selectedDiffKey]: result.data,
+          }));
+          setDiffState({
+            status: "loaded",
+            key: selectedDiffKey,
+            data: result.data,
+          });
+          return;
+        }
+
+        setDiffState({
+          status: "error",
+          key: selectedDiffKey,
+          message: result.error,
+        });
+      })
+      .catch((error: unknown) => {
+        if (!canceled) {
+          setDiffState({
+            status: "error",
+            key: selectedDiffKey,
+            message: error instanceof Error ? error.message : "Request failed.",
+          });
+        }
+      });
+
+    return () => {
+      canceled = true;
+    };
+  }, [
+    cachedDiff,
+    experiment.baseCommit,
+    experiment.id,
+    experiment.repo,
+    selectedTrial,
+    selectedDiffKey,
+    selectedTrialTarget,
+  ]);
+
   return (
-    <section className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
+    <section className="grid gap-5 xl:grid-cols-[22rem_minmax(0,1fr)]">
       <section className="rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
         <h2 className="text-base font-semibold tracking-tight text-zinc-900">
-          Changes
+          Trial changes
         </h2>
         <p className="mt-1 text-sm text-zinc-500">
-          Files, patches, and validation state for this experiment.
+          Select one trial to review its code diff.
         </p>
 
-        {changes.length === 0 ? (
+        {experiment.trials.length === 0 ? (
           <div className="mt-5">
-            <EmptyState title="No changes recorded yet." />
+            <EmptyState title="No trials yet." />
           </div>
         ) : (
-          <div className="mt-5 divide-y divide-zinc-200/70">
-            {changes.map((change) => (
-              <article key={change.id} className="py-4 first:pt-0">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate font-mono text-xs font-medium text-zinc-500">
-                      {change.path}
-                    </p>
-                    <h3 className="mt-2 text-sm font-semibold text-zinc-900">
-                      {change.summary}
-                    </h3>
+          <div className="mt-5 space-y-2">
+            {experiment.trials.map((trial) => {
+              const selected = selectedTrial?.id === trial.id;
+              const evalProgress = evalProgressLabel(
+                trial,
+                experiment.evalBudgetPerTrial,
+              );
+              const delta = getTrialDelta(trial, experiment.baselineScore);
+
+              return (
+                <button
+                  key={trial.id}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() =>
+                    setManualSelection({
+                      experimentId: experiment.id,
+                      trialId: trial.id,
+                    })
+                  }
+                  className={`w-full rounded-xl border px-3 py-3 text-left transition-colors ${
+                    selected
+                      ? "border-blue-200 bg-blue-50/70"
+                      : "border-zinc-200/70 bg-white/60 hover:bg-zinc-50"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-mono text-xs font-semibold text-zinc-900">
+                          {trial.id}
+                        </p>
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ring-1 ring-inset ring-black/5 ${
+                            TRIAL_TONE[trial.status]
+                          }`}
+                        >
+                          {statusLabel(trial.status)}
+                        </span>
+                        {bestTrial?.id === trial.id && (
+                          <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200/70">
+                            Best
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="mt-2 truncate text-sm font-medium text-zinc-900">
+                        {trial.title}
+                      </h3>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="text-[11px] text-zinc-400">{scoreName}</p>
+                      <p className="mt-0.5 text-sm font-semibold text-zinc-900">
+                        {trial.metricValue}
+                      </p>
+                    </div>
                   </div>
-                  <span
-                    className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ring-1 ring-inset ${
-                      CHANGE_TONE[change.status]
-                    }`}
-                  >
-                    {change.status}
-                  </span>
-                </div>
-              </article>
-            ))}
+
+                  <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-zinc-400">
+                    <span>{trial.duration}</span>
+                    {evalProgress && <span>{evalProgress}</span>}
+                    {delta && (
+                      <span
+                        className={deltaTone(
+                          delta.raw,
+                          experiment.evaluation.scoreDirection,
+                        )}
+                      >
+                        {delta.value}
+                      </span>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
           </div>
         )}
       </section>
 
-      <aside className="space-y-5">
-        <ComingSoonPanel title="Validation summary" />
-        <ComingSoonPanel title="Review focus" />
-      </aside>
+      <section className="min-w-0 rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
+        {selectedTrial ? (
+          <>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-mono text-xs font-semibold text-zinc-500">
+                  {selectedTrial.id}
+                </p>
+                <h2 className="mt-1 truncate text-base font-semibold tracking-tight text-zinc-900">
+                  {selectedTrial.title}
+                </h2>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {bestTrial?.id === selectedTrial.id && (
+                  <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200/70">
+                    Best
+                  </span>
+                )}
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ring-1 ring-inset ring-black/5 ${
+                    TRIAL_TONE[selectedTrial.status]
+                  }`}
+                >
+                  {statusLabel(selectedTrial.status)}
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
+              <div>
+                <p className="text-xs text-zinc-400">{scoreName}</p>
+                <p className="mt-1 font-semibold text-zinc-900">
+                  {selectedTrial.metricValue}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-zinc-400">Duration</p>
+                <p className="mt-1 font-semibold text-zinc-900">
+                  {selectedTrial.duration}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-zinc-400">Target ref</p>
+                <p className="mt-1 truncate font-mono text-xs font-semibold text-zinc-900">
+                  {selectedTrialTarget || "None"}
+                </p>
+              </div>
+            </div>
+
+            <DiffContent state={renderedDiffState} />
+          </>
+        ) : (
+          <EmptyState
+            title="No trials yet."
+            body="Run the experiment to create trial diffs."
+          />
+        )}
+      </section>
     </section>
   );
 }

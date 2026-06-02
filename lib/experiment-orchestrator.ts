@@ -527,6 +527,10 @@ export class ExperimentOrchestrator {
           trial.id,
           evalsUsed,
         );
+        trial = { ...trial, commitSha };
+        nextExperiment = withTrial(nextExperiment, trial);
+        await persistExperiment(nextExperiment);
+
         await resetEvalWorktree(worktree.evalPath, commitSha);
         const score = await runEvaluation(
           contract,

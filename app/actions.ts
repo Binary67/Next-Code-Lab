@@ -42,6 +42,21 @@ type StartExperimentInput = {
   experiment: Experiment;
 };
 
+type ReadTrialDiffInput = {
+  experimentId: string;
+  repoPath: string;
+  baseCommit?: string;
+  trialId: string;
+  commitSha?: string;
+  branchName?: string;
+};
+
+type TrialDiff = {
+  trialId: string;
+  targetRef: string;
+  diff: string;
+};
+
 type DeleteExperimentInput = {
   experiment: Experiment;
   remainingExperiments: Experiment[];
@@ -117,6 +132,16 @@ function requiredExperimentId(value: string) {
   }
 
   return experimentId;
+}
+
+function requiredGitRef(value: string | undefined, field: string) {
+  const ref = requiredString(value ?? "", field);
+
+  if (ref.startsWith("-")) {
+    throw new Error(`${field} cannot start with a dash.`);
+  }
+
+  return ref;
 }
 
 function localExperimentPath(kind: "evals" | "worktrees", experimentId: string) {
@@ -315,6 +340,47 @@ export async function startExperiment(
     });
 
     return { ok: true, data: result };
+  } catch (error) {
+    return { ok: false, error: errorMessage(error) };
+  }
+}
+
+export async function readTrialDiff(
+  input: ReadTrialDiffInput,
+): Promise<ActionResult<TrialDiff>> {
+  try {
+    requiredExperimentId(input.experimentId);
+    const repoPath = await resolveLocalRepoPath(input.repoPath);
+    const repoRoot = await runGit(repoPath, ["rev-parse", "--show-toplevel"]);
+    const baseCommit = requiredGitRef(input.baseCommit, "base commit");
+    const targetRef = requiredGitRef(
+      input.commitSha || input.branchName,
+      "trial diff target",
+    );
+    const { stdout } = await execFileAsync(
+      "git",
+      [
+        "diff",
+        "--no-ext-diff",
+        "--find-renames",
+        "--unified=3",
+        baseCommit,
+        targetRef,
+      ],
+      {
+        cwd: repoRoot,
+        maxBuffer: 20 * 1024 * 1024,
+      },
+    );
+
+    return {
+      ok: true,
+      data: {
+        trialId: requiredString(input.trialId, "trial ID"),
+        targetRef,
+        diff: stdout,
+      },
+    };
   } catch (error) {
     return { ok: false, error: errorMessage(error) };
   }
