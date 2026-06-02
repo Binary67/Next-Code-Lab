@@ -792,7 +792,7 @@ function ExperimentDetail({
   }, [onBack]);
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center px-4 py-5 md:left-64 md:px-6 md:py-8">
+    <div className="fixed inset-0 z-40 flex items-center justify-center px-4 py-5 md:left-64 md:py-8">
       <button
         type="button"
         aria-label="Close experiment detail"
@@ -804,7 +804,7 @@ function ExperimentDetail({
         role="dialog"
         aria-modal="true"
         aria-labelledby="experiment-detail-title"
-        className="relative z-10 flex max-h-[calc(100vh-2.5rem)] w-full max-w-[1400px] animate-scale-in flex-col overflow-hidden rounded-[28px] border border-white/70 bg-white/80 shadow-[0_24px_80px_rgba(15,23,42,0.18)] ring-1 ring-zinc-950/5 backdrop-blur-2xl md:max-h-[calc(100vh-4rem)]"
+        className="relative z-10 flex max-h-[calc(100vh-2.5rem)] w-full max-w-[1760px] animate-scale-in flex-col overflow-hidden rounded-[28px] border border-white/70 bg-white/80 shadow-[0_24px_80px_rgba(15,23,42,0.18)] ring-1 ring-zinc-950/5 backdrop-blur-2xl md:max-h-[calc(100vh-4rem)]"
       >
         <header className="border-b border-zinc-200/70 bg-white/45 px-5 py-4 md:px-6 md:py-5">
           <div className="flex flex-wrap items-start justify-between gap-4">
@@ -874,7 +874,7 @@ function ExperimentDetail({
           </div>
         </header>
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[0.9fr_1.1fr] lg:overflow-hidden xl:grid-cols-[0.8fr_1.1fr_0.9fr]">
+        <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[0.9fr_1.1fr] lg:overflow-hidden xl:grid-cols-[0.72fr_1.08fr_1fr]">
           <ExperimentSummaryPanel
             experiment={experiment}
             metricName={metricName}
