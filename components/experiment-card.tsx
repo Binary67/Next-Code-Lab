@@ -1,4 +1,4 @@
-import type { Experiment, Status } from "./data";
+import type { Experiment, Status } from "@/lib/experiments";
 import {
   ArrowDownIcon,
   ArrowRightIcon,
@@ -6,7 +6,7 @@ import {
   PauseIcon,
   TrashIcon,
   WarningIcon,
-} from "./icons";
+} from "@/components/icons";
 
 const STATUS_BADGE: Record<
   Status,

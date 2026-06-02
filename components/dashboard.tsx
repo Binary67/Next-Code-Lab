@@ -1,8 +1,13 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import ExperimentCard from "./experiment-card";
-import { experiments as seed, sampleLogs, type Experiment, type Status } from "./data";
+import ExperimentCard from "@/components/experiment-card";
+import {
+  experiments as seed,
+  sampleLogs,
+  type Experiment,
+  type Status,
+} from "@/lib/experiments";
 import {
   ArrowRightIcon,
   Avatar,
@@ -19,7 +24,7 @@ import {
   TrashIcon,
   UserGlyph,
   WarningIcon,
-} from "./icons";
+} from "@/components/icons";
 
 type NavId = "experiments" | "new-experiment" | "repositories" | "settings";
 type TabId = "all" | Status;
