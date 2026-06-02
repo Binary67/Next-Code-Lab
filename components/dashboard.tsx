@@ -971,7 +971,7 @@ function AgentCollab({
   };
 
   return (
-    <section className="mx-auto flex min-h-[520px] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-zinc-50/70 ring-1 ring-zinc-950/5">
+    <section className="flex min-h-[520px] w-full flex-col overflow-hidden rounded-2xl bg-zinc-50/70 ring-1 ring-zinc-950/5">
       <header className="border-b border-zinc-200/70 bg-white/55 px-5 py-4">
         <div className="flex items-center gap-2">
           <Avatar size={28} hue={205}>
@@ -1230,13 +1230,15 @@ function ExperimentDetail({
         />
 
         <div className="min-h-0 flex-1 overflow-y-auto bg-white/55 px-5 py-4 md:px-6">
-          <PendingInputBanner
-            experiment={experiment}
-            onAnswer={onAnswer}
-            onOpenCollab={() => setDetailTab("collab")}
-          />
+          {detailTab !== "collab" && (
+            <PendingInputBanner
+              experiment={experiment}
+              onAnswer={onAnswer}
+              onOpenCollab={() => setDetailTab("collab")}
+            />
+          )}
 
-          <div className="mx-auto w-full max-w-6xl">{activePanel}</div>
+          <div className="w-full">{activePanel}</div>
         </div>
       </section>
     </div>
