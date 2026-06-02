@@ -57,15 +57,6 @@ body {
   }
 }
 
-@keyframes draw {
-  from {
-    stroke-dashoffset: 320;
-  }
-  to {
-    stroke-dashoffset: 0;
-  }
-}
-
 .animate-fade-in {
   animation: fade-in 0.18s ease-out both;
 }
@@ -78,16 +69,10 @@ body {
   animation: slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.animate-draw {
-  stroke-dasharray: 320;
-  animation: draw 1.2s ease-out forwards;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .animate-fade-in,
   .animate-scale-in,
-  .animate-slide-up,
-  .animate-draw {
+  .animate-slide-up {
     animation: none;
   }
 }

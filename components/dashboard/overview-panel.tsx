@@ -48,21 +48,33 @@ function MetricsList({ metrics }: { metrics: ExperimentMetric[] }) {
   );
 }
 
+function formatTrendValue(value: number, unit = "") {
+  return `${value.toFixed(4)}${unit}`;
+}
+
 function TrendChart({
   points,
   target,
   targetLabel,
+  unit = "",
 }: {
   points: TrendPoint[];
   target: number;
   targetLabel: string;
+  unit?: string;
 }) {
   const width = 640;
   const height = 260;
   const padding = { top: 18, right: 26, bottom: 34, left: 42 };
   const values = points.map((point) => point.value);
-  const max = Math.max(...values, target) + 12;
-  const min = Math.min(0, ...values, target);
+  const highest = Math.max(...values);
+  const rawMax = Math.max(...values, target);
+  const rawMin = Math.min(...values, target);
+  const range = rawMax - rawMin;
+  const yPadding =
+    range === 0 ? Math.max(Math.abs(rawMax) * 0.05, 0.001) : range * 0.18;
+  const max = rawMax + yPadding;
+  const min = rawMin - yPadding;
   const xSpan = width - padding.left - padding.right;
   const ySpan = height - padding.top - padding.bottom;
   const xStep = points.length > 1 ? xSpan / (points.length - 1) : 0;
@@ -76,6 +88,8 @@ function TrendChart({
     width - padding.right
   },${height - padding.bottom}`;
   const targetY = yFor(target);
+  const highestY = yFor(highest);
+  const showHighest = Math.abs(highest - target) > Number.EPSILON;
 
   return (
     <svg
@@ -99,6 +113,7 @@ function TrendChart({
           />
         );
       })}
+      <polygon points={area} fill="url(#trend-area)" opacity="0.9" />
       <line
         x1={padding.left}
         x2={width - padding.right}
@@ -117,7 +132,29 @@ function TrendChart({
       >
         {targetLabel}
       </text>
-      <polygon points={area} fill="url(#trend-area)" opacity="0.9" />
+      {showHighest && (
+        <>
+          <line
+            x1={padding.left}
+            x2={width - padding.right}
+            y1={highestY}
+            y2={highestY}
+            stroke="#f97316"
+            opacity="0.78"
+            strokeDasharray="1 5"
+            strokeLinecap="round"
+            strokeWidth="1.4"
+          />
+          <text
+            x={width - padding.right}
+            y={highestY - 7}
+            textAnchor="end"
+            className="fill-orange-600 text-[11px] font-medium"
+          >
+            Highest: {formatTrendValue(highest, unit)}
+          </text>
+        </>
+      )}
       <polyline
         points={line}
         fill="none"
@@ -125,7 +162,6 @@ function TrendChart({
         strokeLinecap="round"
         strokeLinejoin="round"
         strokeWidth="2.6"
-        className="animate-draw"
       />
       {points.map((point, index) => (
         <g key={point.label}>
@@ -238,6 +274,7 @@ export function OverviewPanel({
   const movement =
     latestPoint && previousPoint ? latestPoint.value - previousPoint.value : 0;
   const movementUnit = experiment.metricValue.includes("ms") ? "ms" : "";
+  const displayedMovement = Math.abs(movement) < 0.00005 ? 0 : movement;
   const activeTrial: ExperimentTrial | undefined = experiment.trials[0];
   const hasTrend = experiment.trend.length > 0;
 
@@ -257,16 +294,18 @@ export function OverviewPanel({
             {hasTrend && (
               <div className="rounded-2xl bg-blue-50/80 px-3 py-2 text-right ring-1 ring-blue-100">
                 <p className="text-xs font-medium text-blue-700">
-                  Current {experiment.metricValue}
+                  Current{" "}
+                  {latestPoint
+                    ? formatTrendValue(latestPoint.value, movementUnit)
+                    : experiment.metricValue}
                 </p>
                 <p
                   className={`mt-0.5 text-xs ${
-                    movement > 0 ? "text-amber-600" : "text-emerald-600"
+                    displayedMovement > 0 ? "text-amber-600" : "text-emerald-600"
                   }`}
                 >
-                  {movement > 0 ? "+" : ""}
-                  {movement}
-                  {movementUnit} from previous
+                  {displayedMovement > 0 ? "+" : ""}
+                  {formatTrendValue(displayedMovement, movementUnit)} from previous
                 </p>
               </div>
             )}
@@ -276,6 +315,7 @@ export function OverviewPanel({
               points={experiment.trend}
               target={experiment.targetMetric}
               targetLabel={`${experiment.targetLabel}: ${experiment.targetValue}`}
+              unit={movementUnit}
             />
           ) : (
             <div className="mt-4">

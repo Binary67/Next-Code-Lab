@@ -39,6 +39,8 @@ export const CHANGE_TONE: Record<ExperimentChange["status"], string> = {
 export function statusLabel(status: Status | ExperimentTrial["status"]) {
   if (status === "needs-input") return "Needs input";
   if (status === "setup") return "Setup";
+  if (status === "running") return "Running";
+  if (status === "completed") return "Completed";
   if (status === "failed") return "Failed";
   return status;
 }

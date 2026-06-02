@@ -57,7 +57,7 @@ function DetailStatusStrip({ experiment }: { experiment: Experiment }) {
     {
       label: "Latest trial",
       value: latestTrial?.id ?? "None",
-      detail: latestTrial?.metricValue ?? "not measured",
+      detail: latestTrial?.metricValue ?? "Not measured",
     },
     {
       label: "Elapsed",

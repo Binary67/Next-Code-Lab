@@ -112,7 +112,7 @@ export function refreshEvaluationMetrics(
       return {
         ...metric,
         value: evaluationStatusLabel(evaluation.status),
-        detail: evaluation.mode === "existing" ? "existing script" : "generated script",
+        detail: evaluation.mode === "existing" ? "Existing script" : "Generated script",
       };
     }
 
