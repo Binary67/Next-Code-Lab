@@ -1,0 +1,293 @@
+import { useState } from "react";
+import type {
+  Experiment,
+  ExperimentChange,
+  ProgressStep,
+} from "@/lib/experiments";
+import { Avatar, FlaskIcon, WarningIcon } from "@/components/icons";
+import {
+  CHANGE_TONE,
+  ComingSoonPanel,
+  EmptyState,
+  PROGRESS_TONE,
+  inputClass,
+} from "./shared";
+
+export function ProgressPanel({ steps }: { steps: ProgressStep[] }) {
+  if (steps.length === 0) {
+    return <EmptyState title="Progress will appear after setup starts." />;
+  }
+
+  const current =
+    steps.find((step) => step.status === "blocked") ??
+    steps.find((step) => step.status === "active") ??
+    steps[0];
+  const queued = steps.filter((step) => step.status === "queued");
+
+  return (
+    <section className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
+      <section className="rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
+        <h2 className="text-base font-semibold tracking-tight text-zinc-900">
+          Progress monitor
+        </h2>
+        <p className="mt-1 text-sm text-zinc-500">
+          Current step, recent work, and queued actions.
+        </p>
+
+        <div className="mt-5 divide-y divide-zinc-200/70">
+          {steps.map((step) => (
+            <article key={step.id} className="grid gap-3 py-4 first:pt-0 sm:grid-cols-[8rem_1fr]">
+              <div className="flex items-center gap-2 sm:block">
+                <p className="font-mono text-xs text-zinc-400">{step.time}</p>
+                <span
+                  className={`mt-0 inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ring-1 ring-inset sm:mt-2 ${
+                    PROGRESS_TONE[step.status]
+                  }`}
+                >
+                  {step.status}
+                </span>
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-zinc-900">
+                  {step.title}
+                </h3>
+                <p className="mt-1 text-sm leading-relaxed text-zinc-500">
+                  {step.detail}
+                </p>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <aside className="space-y-5">
+        <section className="rounded-2xl bg-zinc-50/70 p-4 ring-1 ring-zinc-950/5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+            Current focus
+          </p>
+          <h3 className="mt-3 text-base font-semibold text-zinc-900">
+            {current.title}
+          </h3>
+          <p className="mt-2 text-sm leading-relaxed text-zinc-500">
+            {current.detail}
+          </p>
+          <span
+            className={`mt-4 inline-flex rounded-full px-2.5 py-1 text-xs font-medium capitalize ring-1 ring-inset ${
+              PROGRESS_TONE[current.status]
+            }`}
+          >
+            {current.status}
+          </span>
+        </section>
+
+        <section className="rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+            Next up
+          </p>
+          <div className="mt-3 space-y-3">
+            {queued.length > 0 ? (
+              queued.map((step) => (
+                <div key={step.id}>
+                  <p className="text-sm font-medium text-zinc-900">
+                    {step.title}
+                  </p>
+                  <p className="mt-1 text-sm leading-relaxed text-zinc-500">
+                    {step.detail}
+                  </p>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-zinc-500">No queued steps.</p>
+            )}
+          </div>
+        </section>
+      </aside>
+    </section>
+  );
+}
+
+export function ChangesPanel({ changes }: { changes: ExperimentChange[] }) {
+  return (
+    <section className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
+      <section className="rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
+        <h2 className="text-base font-semibold tracking-tight text-zinc-900">
+          Changes
+        </h2>
+        <p className="mt-1 text-sm text-zinc-500">
+          Files, patches, and validation state for this experiment.
+        </p>
+
+        {changes.length === 0 ? (
+          <div className="mt-5">
+            <EmptyState title="No changes recorded yet." />
+          </div>
+        ) : (
+          <div className="mt-5 divide-y divide-zinc-200/70">
+            {changes.map((change) => (
+              <article key={change.id} className="py-4 first:pt-0">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate font-mono text-xs font-medium text-zinc-500">
+                      {change.path}
+                    </p>
+                    <h3 className="mt-2 text-sm font-semibold text-zinc-900">
+                      {change.summary}
+                    </h3>
+                  </div>
+                  <span
+                    className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ring-1 ring-inset ${
+                      CHANGE_TONE[change.status]
+                    }`}
+                  >
+                    {change.status}
+                  </span>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <aside className="space-y-5">
+        <ComingSoonPanel title="Validation summary" />
+        <ComingSoonPanel title="Review focus" />
+      </aside>
+    </section>
+  );
+}
+
+export function AgentCollab({
+  experiment,
+  onAnswer,
+  onSendReply,
+}: {
+  experiment: Experiment;
+  onAnswer: (experiment: Experiment, answer: string) => void;
+  onSendReply: (experiment: Experiment, text: string) => void;
+}) {
+  const [reply, setReply] = useState("");
+  const canReply = experiment.status !== "setup";
+
+  const addReply = (text: string) => {
+    if (!canReply) return;
+
+    const trimmed = text.trim();
+    if (!trimmed) return;
+
+    onSendReply(experiment, trimmed);
+    setReply("");
+  };
+
+  return (
+    <section className="flex min-h-[520px] w-full flex-col overflow-hidden rounded-2xl bg-zinc-50/70 ring-1 ring-zinc-950/5">
+      <header className="border-b border-zinc-200/70 bg-white/55 px-5 py-4">
+        <div className="flex items-center gap-2">
+          <Avatar size={28} hue={205}>
+            <FlaskIcon className="h-4 w-4 text-white" />
+          </Avatar>
+          <div>
+            <h2 className="text-sm font-semibold text-zinc-900">Agent Collab</h2>
+            <p className="text-xs text-zinc-500">Context and decisions</p>
+          </div>
+        </div>
+      </header>
+
+      <div className="flex-1 space-y-4 overflow-y-auto px-4 py-5 scrollbar-hidden">
+        {experiment.agentMessages.length === 0 && !experiment.pendingQuestion && (
+          <EmptyState title="Runtime collaboration starts after the experiment starts." />
+        )}
+
+        {experiment.agentMessages.map((message) => {
+          const fromUser = message.author === "user";
+          return (
+            <div
+              key={message.id}
+              className={`flex ${fromUser ? "justify-end" : "justify-start"}`}
+            >
+              <div
+                className={`max-w-[85%] rounded-2xl px-3.5 py-3 text-sm leading-relaxed ${
+                  fromUser
+                    ? "bg-blue-600 text-white shadow-sm"
+                    : "bg-white/70 text-zinc-700 ring-1 ring-zinc-950/5"
+                }`}
+              >
+                <p>{message.text}</p>
+                <p
+                  className={`mt-2 text-[11px] ${
+                    fromUser ? "text-blue-100" : "text-zinc-400"
+                  }`}
+                >
+                  {message.time}
+                </p>
+              </div>
+            </div>
+          );
+        })}
+
+        {experiment.pendingQuestion && experiment.status === "needs-input" && (
+          <div className="rounded-2xl bg-amber-50/80 p-4 ring-1 ring-amber-200/80">
+            <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-amber-700">
+              <WarningIcon className="h-3.5 w-3.5" />
+              {experiment.pendingQuestion.title}
+            </p>
+            <p className="mt-2 text-sm font-medium leading-relaxed text-zinc-900">
+              {experiment.pendingQuestion.body}
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {experiment.pendingQuestion.options.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => onAnswer(experiment, option)}
+                  className="rounded-xl bg-white/80 px-3 py-1.5 text-sm font-medium text-zinc-700 ring-1 ring-zinc-950/5 transition-colors hover:bg-white hover:text-blue-700"
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+            <p className="mt-3 text-xs text-zinc-400">Just now</p>
+          </div>
+        )}
+      </div>
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          addReply(reply);
+        }}
+        className="border-t border-zinc-200/70 bg-white/55 p-4"
+      >
+        <textarea
+          value={reply}
+          onChange={(e) => setReply(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              addReply(reply);
+            }
+          }}
+          rows={3}
+          disabled={!canReply}
+          placeholder={
+            canReply
+              ? "Reply to agent..."
+              : "Start the experiment before using runtime collab."
+          }
+          className={`${inputClass} resize-none`}
+        />
+        <div className="mt-2 flex items-center justify-between">
+          <p className="text-xs text-zinc-400">
+            {canReply ? "Press Enter to send" : "Runtime collab is locked during setup"}
+          </p>
+          <button
+            type="submit"
+            disabled={!canReply || !reply.trim()}
+            className="rounded-xl bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Send
+          </button>
+        </div>
+      </form>
+    </section>
+  );
+}
