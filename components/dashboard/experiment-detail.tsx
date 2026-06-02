@@ -8,17 +8,16 @@ import type {
 import { ArrowRightIcon, CloseIcon, WarningIcon } from "@/components/icons";
 import type { DetailTabId, EvalSetupPendingAction } from "./types";
 import { EvaluationPanel } from "./evaluation-panel";
-import { OverviewPanel, TrialsList } from "./overview-panel";
-import { AgentCollab, ChangesPanel, ProgressPanel } from "./run-panels";
+import { OverviewPanel } from "./overview-panel";
+import { AgentCollab, ChangesPanel, RunPanel } from "./run-panels";
 import { STATUS_TONE, statusLabel } from "./shared";
 import { directionLabel, evaluationStatusLabel } from "./evaluation-utils";
 
 const DETAIL_TABS: { id: DetailTabId; label: string }[] = [
   { id: "evaluation", label: "Evaluation" },
   { id: "overview", label: "Overview" },
-  { id: "progress", label: "Progress" },
+  { id: "run", label: "Run" },
   { id: "collab", label: "Agent Collab" },
-  { id: "trials", label: "Trials" },
   { id: "changes", label: "Changes" },
 ];
 function DetailStatusStrip({ experiment }: { experiment: Experiment }) {
@@ -256,8 +255,8 @@ export function ExperimentDetail({
             onApproveGenerated={onApproveGeneratedEvaluation}
           />
         );
-      case "progress":
-        return <ProgressPanel steps={experiment.progressSteps} />;
+      case "run":
+        return <RunPanel experiment={experiment} metricName={metricName} />;
       case "collab":
         return (
           <AgentCollab
@@ -266,8 +265,6 @@ export function ExperimentDetail({
             onSendReply={onSendReply}
           />
         );
-      case "trials":
-        return <TrialsList trials={experiment.trials} metricName={metricName} />;
       case "changes":
         return <ChangesPanel changes={experiment.changes} />;
       case "overview":

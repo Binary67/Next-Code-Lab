@@ -5,8 +5,7 @@ export type TabId = "all" | Status;
 export type DetailTabId =
   | "evaluation"
   | "overview"
-  | "progress"
+  | "run"
   | "collab"
-  | "trials"
   | "changes";
 export type EvalSetupPendingAction = "start" | "reply" | "approve";

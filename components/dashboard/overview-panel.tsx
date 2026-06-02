@@ -197,67 +197,6 @@ function TrendChart({
   );
 }
 
-export function TrialsList({
-  trials,
-  metricName,
-}: {
-  trials: ExperimentTrial[];
-  metricName: string;
-}) {
-  return (
-    <section>
-      <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-        Recent trials
-      </h2>
-      <p className="mt-1 text-xs text-zinc-500">
-        Latest attempts and measured outcomes.
-      </p>
-
-      {trials.length === 0 ? (
-        <div className="mt-3">
-          <EmptyState title="No trials yet." />
-        </div>
-      ) : (
-        <div className="mt-3 divide-y divide-zinc-200/70 overflow-hidden rounded-2xl bg-white/55 ring-1 ring-zinc-950/5">
-          {trials.map((trial) => (
-            <article key={trial.id} className="px-4 py-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-mono text-xs font-semibold text-zinc-900">
-                      {trial.id}
-                    </p>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ring-1 ring-inset ring-black/5 ${
-                        TRIAL_TONE[trial.status]
-                      }`}
-                    >
-                      {statusLabel(trial.status)}
-                    </span>
-                  </div>
-                  <h3 className="mt-2 truncate text-sm font-medium text-zinc-900">
-                    {trial.title}
-                  </h3>
-                </div>
-                <div className="shrink-0 text-right">
-                  <p className="text-xs text-zinc-400">{metricName}</p>
-                  <p className="mt-0.5 text-sm font-semibold text-zinc-900">
-                    {trial.metricValue}
-                  </p>
-                </div>
-              </div>
-              <p className="mt-2 text-sm leading-relaxed text-zinc-500">
-                {trial.summary}
-              </p>
-              <p className="mt-2 text-xs text-zinc-400">{trial.duration}</p>
-            </article>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
 export function OverviewPanel({
   experiment,
   metricName,
