@@ -674,7 +674,6 @@ function TrialsList({
 function DetailStatusStrip({ experiment }: { experiment: Experiment }) {
   const latestTrial: ExperimentTrial | undefined = experiment.trials[0];
   const trials = experiment.metrics.find((metric) => metric.label === "Trials");
-  const spend = experiment.metrics.find((metric) => metric.label === "Spend");
   const evaluation = experiment.evaluation;
   const statusDetail = experiment.pendingQuestion
     ? "User input required"
@@ -691,9 +690,10 @@ function DetailStatusStrip({ experiment }: { experiment: Experiment }) {
       detail: "Current",
     },
     {
-      label: "Evaluation",
-      value: evaluationStatusLabel(evaluation.status),
-      detail: evaluation.mode === "existing" ? "Existing script" : "Generated script",
+      label: "Mode",
+      value:
+        evaluation.mode === "existing" ? "Existing script" : "Generated script",
+      detail: evaluationStatusLabel(evaluation.status),
     },
     {
       label: "Score",
@@ -713,11 +713,6 @@ function DetailStatusStrip({ experiment }: { experiment: Experiment }) {
         latestTrial?.duration ??
         "Not started",
       detail: `${trials?.value ?? experiment.trials.length} trials`,
-    },
-    {
-      label: "Spend",
-      value: spend?.value ?? "Coming soon",
-      detail: spend?.detail ?? "not calculated",
     },
   ];
 
