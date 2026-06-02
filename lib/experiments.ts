@@ -29,6 +29,21 @@ export type AgentMessage = {
   time: string;
 };
 
+export type ProgressStep = {
+  id: string;
+  title: string;
+  detail: string;
+  status: "completed" | "active" | "queued" | "blocked";
+  time: string;
+};
+
+export type ExperimentChange = {
+  id: string;
+  path: string;
+  summary: string;
+  status: "applied" | "validated" | "planned";
+};
+
 export type Experiment = {
   id: string;
   repo: string;
@@ -48,6 +63,8 @@ export type Experiment = {
   metrics: ExperimentMetric[];
   trend: TrendPoint[];
   trials: ExperimentTrial[];
+  progressSteps: ProgressStep[];
+  changes: ExperimentChange[];
   agentMessages: AgentMessage[];
   pendingQuestion?: {
     title: string;
@@ -127,6 +144,56 @@ export const experiments: Experiment[] = [
         metricValue: "58 ms",
         duration: "16m",
         status: "completed",
+      },
+    ],
+    progressSteps: [
+      {
+        id: "inspect-payload",
+        title: "Inspect payload profile",
+        detail: "Identified large JSON response bodies on /api/v2/data.",
+        status: "completed",
+        time: "10:21 AM",
+      },
+      {
+        id: "measure-cache",
+        title: "Measure cache header change",
+        detail: "Latest run finished at 62 ms p95 with error rate inside guardrail.",
+        status: "completed",
+        time: "10:39 AM",
+      },
+      {
+        id: "choose-compression",
+        title: "Waiting on compression direction",
+        detail: "A stronger default can be tested after the algorithm choice is confirmed.",
+        status: "blocked",
+        time: "Just now",
+      },
+      {
+        id: "run-next-trial",
+        title: "Run next trial",
+        detail: "Apply the selected compression strategy and re-measure p95 latency.",
+        status: "queued",
+        time: "Next",
+      },
+    ],
+    changes: [
+      {
+        id: "cache-control",
+        path: "apps/api-gateway/routes/data.ts",
+        summary: "Adjusted cache-control max-age for the largest JSON response.",
+        status: "applied",
+      },
+      {
+        id: "connection-pool",
+        path: "packages/gateway/upstream-pool.ts",
+        summary: "Increased upstream max connections from 180 to 500.",
+        status: "validated",
+      },
+      {
+        id: "compression-default",
+        path: "packages/gateway/compression.ts",
+        summary: "Prepare a stronger JSON compression default after user input.",
+        status: "planned",
       },
     ],
     agentMessages: [

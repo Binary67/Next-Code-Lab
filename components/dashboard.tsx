@@ -4,10 +4,11 @@ import { useEffect, useState, type ReactNode } from "react";
 import ExperimentCard from "@/components/experiment-card";
 import {
   experiments as seed,
-  type AgentMessage,
   type Experiment,
+  type ExperimentChange,
   type ExperimentMetric,
   type ExperimentTrial,
+  type ProgressStep,
   type Status,
   type TrendPoint,
 } from "@/lib/experiments";
@@ -30,6 +31,7 @@ import {
 
 type NavId = "experiments" | "repositories" | "settings";
 type TabId = "all" | Status;
+type DetailTabId = "overview" | "progress" | "collab" | "trials" | "changes";
 type SourceType = "git" | "local";
 
 const PRIMARY_NAV = [
@@ -48,6 +50,14 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "running", label: "Running" },
   { id: "needs-input", label: "Needs input" },
   { id: "completed", label: "Completed" },
+];
+
+const DETAIL_TABS: { id: DetailTabId; label: string }[] = [
+  { id: "overview", label: "Overview" },
+  { id: "progress", label: "Progress" },
+  { id: "collab", label: "Agent Collab" },
+  { id: "trials", label: "Trials" },
+  { id: "changes", label: "Changes" },
 ];
 
 const inputClass =
@@ -291,6 +301,19 @@ const TRIAL_TONE = {
   running: "bg-blue-50 text-blue-700",
 } as const;
 
+const PROGRESS_TONE: Record<ProgressStep["status"], string> = {
+  completed: "bg-emerald-50 text-emerald-700 ring-emerald-200/70",
+  active: "bg-blue-50 text-blue-700 ring-blue-200/70",
+  queued: "bg-zinc-100 text-zinc-500 ring-zinc-200",
+  blocked: "bg-amber-50 text-amber-700 ring-amber-200/80",
+};
+
+const CHANGE_TONE: Record<ExperimentChange["status"], string> = {
+  applied: "bg-blue-50 text-blue-700 ring-blue-200/70",
+  validated: "bg-emerald-50 text-emerald-700 ring-emerald-200/70",
+  planned: "bg-zinc-100 text-zinc-500 ring-zinc-200",
+};
+
 function statusLabel(status: Status | "needs-input") {
   return status === "needs-input" ? "Needs input" : status;
 }
@@ -496,7 +519,153 @@ function TrialsList({
   );
 }
 
-function ExperimentSummaryPanel({
+function DetailStatusStrip({ experiment }: { experiment: Experiment }) {
+  const latestTrial = experiment.trials[0];
+  const trials = experiment.metrics.find((metric) => metric.label === "Trials");
+  const spend = experiment.metrics.find((metric) => metric.label === "Spend");
+  const statusDetail = experiment.pendingQuestion
+    ? "User input required"
+    : experiment.timing ?? latestTrial.duration;
+  const items = [
+    {
+      label: "State",
+      value: statusLabel(experiment.status),
+      detail: statusDetail,
+    },
+    {
+      label: experiment.metricLabel,
+      value: experiment.metricValue,
+      detail: "Current",
+    },
+    {
+      label: experiment.targetLabel,
+      value: experiment.targetValue,
+      detail: "Objective",
+    },
+    {
+      label: "Latest trial",
+      value: latestTrial.id,
+      detail: latestTrial.metricValue,
+    },
+    {
+      label: "Elapsed",
+      value: trials?.detail.replace(" elapsed", "") ?? latestTrial.duration,
+      detail: `${trials?.value ?? experiment.trials.length} trials`,
+    },
+    {
+      label: "Spend",
+      value: spend?.value ?? "$0.00",
+      detail: spend?.detail ?? "not tracked",
+    },
+  ];
+
+  return (
+    <div className="grid gap-px overflow-hidden rounded-2xl bg-zinc-200/70 ring-1 ring-zinc-950/5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      {items.map((item) => (
+        <div key={item.label} className="min-w-0 bg-white/70 px-3.5 py-3">
+          <p className="truncate text-xs font-medium text-zinc-500">
+            {item.label}
+          </p>
+          <p className="mt-1 truncate text-sm font-semibold text-zinc-900">
+            {item.value}
+          </p>
+          <p className="mt-0.5 truncate text-xs text-zinc-400">
+            {item.detail}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DetailTabs({
+  active,
+  needsInput,
+  onChange,
+}: {
+  active: DetailTabId;
+  needsInput: boolean;
+  onChange: (tab: DetailTabId) => void;
+}) {
+  return (
+    <nav className="flex min-w-0 gap-5 overflow-x-auto border-t border-zinc-200/70 px-5 md:px-6">
+      {DETAIL_TABS.map((tab) => {
+        const selected = active === tab.id;
+        const showInput = tab.id === "collab" && needsInput;
+        return (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => onChange(tab.id)}
+            className={`-mb-px flex shrink-0 items-center gap-2 border-b-2 py-3 text-sm transition-colors ${
+              selected
+                ? "border-blue-700 font-medium text-blue-700"
+                : "border-transparent text-zinc-500 hover:text-zinc-900"
+            }`}
+          >
+            {tab.label}
+            {showInput && (
+              <span className="rounded-full bg-amber-100 px-1.5 text-[11px] font-medium text-amber-700 ring-1 ring-amber-200/80">
+                Input
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
+function PendingInputBanner({
+  experiment,
+  onAnswer,
+  onOpenCollab,
+}: {
+  experiment: Experiment;
+  onAnswer: (experiment: Experiment, answer: string) => void;
+  onOpenCollab: () => void;
+}) {
+  if (!experiment.pendingQuestion || experiment.status !== "needs-input") {
+    return null;
+  }
+
+  return (
+    <section className="mb-4 rounded-2xl bg-amber-50/85 p-4 ring-1 ring-amber-200/80">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-amber-700">
+            <WarningIcon className="h-3.5 w-3.5" />
+            {experiment.pendingQuestion.title}
+          </p>
+          <p className="mt-2 text-sm font-medium leading-relaxed text-zinc-900">
+            {experiment.pendingQuestion.body}
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-wrap justify-end gap-2">
+          {experiment.pendingQuestion.options.map((option) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => onAnswer(experiment, option)}
+              className="rounded-xl bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 ring-1 ring-zinc-950/5 transition-colors hover:text-blue-700"
+            >
+              {option}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={onOpenCollab}
+            className="rounded-xl px-3 py-1.5 text-sm font-medium text-amber-700 transition-colors hover:bg-amber-100"
+          >
+            Open Collab
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function OverviewPanel({
   experiment,
   metricName,
   onNotify,
@@ -504,46 +673,6 @@ function ExperimentSummaryPanel({
   experiment: Experiment;
   metricName: string;
   onNotify: (message: string) => void;
-}) {
-  return (
-    <aside className="flex min-w-0 flex-col gap-6 border-zinc-200/70 bg-zinc-50/55 p-5 lg:overflow-y-auto lg:border-r [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      <section>
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-          Run controls
-        </h2>
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={() => onNotify(`${experiment.title} paused`)}
-            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-white/65 px-3 py-2 text-sm font-medium text-zinc-700 ring-1 ring-zinc-950/5 transition-colors hover:bg-white"
-          >
-            <PauseIcon className="h-4 w-4" />
-            Pause
-          </button>
-          <button
-            type="button"
-            onClick={() => onNotify(`${experiment.title} stopped`)}
-            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 ring-1 ring-rose-200/70 transition-colors hover:bg-rose-100"
-          >
-            <CloseIcon className="h-4 w-4" />
-            Stop
-          </button>
-        </div>
-      </section>
-
-      <MetricsList metrics={experiment.metrics} />
-
-      <TrialsList trials={experiment.trials} metricName={metricName} />
-    </aside>
-  );
-}
-
-function OptimizationPanel({
-  experiment,
-  metricName,
-}: {
-  experiment: Experiment;
-  metricName: string;
 }) {
   const latestPoint = experiment.trend[experiment.trend.length - 1];
   const previousPoint = experiment.trend[experiment.trend.length - 2];
@@ -553,132 +682,297 @@ function OptimizationPanel({
   const activeTrial = experiment.trials[0];
 
   return (
-    <section className="flex min-w-0 flex-col bg-white/60 p-5 lg:overflow-y-auto">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-base font-semibold tracking-tight text-zinc-900">
-            Optimization
-          </h2>
-          <p className="mt-1 text-sm text-zinc-500">
-            Trend direction and the latest trial state.
-          </p>
-        </div>
-        <div className="rounded-2xl bg-blue-50/80 px-3 py-2 text-right ring-1 ring-blue-100">
-          <p className="text-xs font-medium text-blue-700">
-            Current {experiment.metricValue}
-          </p>
-          <p
-            className={`mt-0.5 text-xs ${
-              movement > 0 ? "text-amber-600" : "text-emerald-600"
-            }`}
-          >
-            {movement > 0 ? "+" : ""}
-            {movement}
-            {movementUnit} from previous
-          </p>
+    <section className="grid gap-5 xl:grid-cols-[1.45fr_0.85fr]">
+      <div className="space-y-5">
+        <section className="rounded-2xl bg-zinc-50/70 p-4 ring-1 ring-zinc-950/5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold tracking-tight text-zinc-900">
+                Overview
+              </h2>
+              <p className="mt-1 text-sm text-zinc-500">
+                Trend direction and latest trial state.
+              </p>
+            </div>
+            <div className="rounded-2xl bg-blue-50/80 px-3 py-2 text-right ring-1 ring-blue-100">
+              <p className="text-xs font-medium text-blue-700">
+                Current {experiment.metricValue}
+              </p>
+              <p
+                className={`mt-0.5 text-xs ${
+                  movement > 0 ? "text-amber-600" : "text-emerald-600"
+                }`}
+              >
+                {movement > 0 ? "+" : ""}
+                {movement}
+                {movementUnit} from previous
+              </p>
+            </div>
+          </div>
+          <TrendChart
+            points={experiment.trend}
+            target={experiment.targetMetric}
+            targetLabel={`${experiment.targetLabel}: ${experiment.targetValue}`}
+          />
+        </section>
+
+        <div className="grid gap-3 lg:grid-cols-2">
+          <section className="rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
+            <h3 className="text-sm font-semibold text-zinc-900">Active run</h3>
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-mono text-xs font-semibold text-zinc-900">
+                  {activeTrial.id}
+                </p>
+                <p className="mt-1 truncate text-sm font-medium text-zinc-900">
+                  {activeTrial.title}
+                </p>
+              </div>
+              <span
+                className={`rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ring-1 ring-inset ring-black/5 ${
+                  TRIAL_TONE[activeTrial.status]
+                }`}
+              >
+                {statusLabel(activeTrial.status)}
+              </span>
+            </div>
+            <p className="mt-3 text-sm leading-relaxed text-zinc-500">
+              {activeTrial.summary}
+            </p>
+          </section>
+
+          <section className="rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
+            <h3 className="text-sm font-semibold text-zinc-900">Measurement</h3>
+            <div className="mt-3 divide-y divide-zinc-200/70 text-sm">
+              <div className="flex items-center justify-between gap-3 py-2 first:pt-0">
+                <span className="text-zinc-500">{metricName}</span>
+                <span className="font-semibold text-zinc-900">
+                  {activeTrial.metricValue}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-3 py-2">
+                <span className="text-zinc-500">{experiment.targetLabel}</span>
+                <span className="font-semibold text-zinc-900">
+                  {experiment.targetValue}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-3 py-2 last:pb-0">
+                <span className="text-zinc-500">Duration</span>
+                <span className="font-semibold text-zinc-900">
+                  {activeTrial.duration}
+                </span>
+              </div>
+            </div>
+          </section>
         </div>
       </div>
 
-      <section className="mt-5 rounded-2xl bg-zinc-50/70 p-4 ring-1 ring-zinc-950/5">
-        <div>
-          <h3 className="text-sm font-semibold text-zinc-900">
-            Optimization trend
-          </h3>
-          <p className="mt-0.5 text-xs text-zinc-500">
-            Measured across completed trials.
-          </p>
+      <aside className="space-y-5">
+        <section className="rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+            Run controls
+          </h2>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => onNotify(`${experiment.title} paused`)}
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-white px-3 py-2 text-sm font-medium text-zinc-700 ring-1 ring-zinc-950/5 transition-colors hover:bg-zinc-50"
+            >
+              <PauseIcon className="h-4 w-4" />
+              Pause
+            </button>
+            <button
+              type="button"
+              onClick={() => onNotify(`${experiment.title} stopped`)}
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 ring-1 ring-rose-200/70 transition-colors hover:bg-rose-100"
+            >
+              <CloseIcon className="h-4 w-4" />
+              Stop
+            </button>
+          </div>
+        </section>
+
+        <MetricsList metrics={experiment.metrics} />
+      </aside>
+    </section>
+  );
+}
+
+function ProgressPanel({ steps }: { steps: ProgressStep[] }) {
+  const current =
+    steps.find((step) => step.status === "blocked") ??
+    steps.find((step) => step.status === "active") ??
+    steps[0];
+  const queued = steps.filter((step) => step.status === "queued");
+
+  return (
+    <section className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
+      <section className="rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
+        <h2 className="text-base font-semibold tracking-tight text-zinc-900">
+          Progress monitor
+        </h2>
+        <p className="mt-1 text-sm text-zinc-500">
+          Current step, recent work, and queued actions.
+        </p>
+
+        <div className="mt-5 divide-y divide-zinc-200/70">
+          {steps.map((step) => (
+            <article key={step.id} className="grid gap-3 py-4 first:pt-0 sm:grid-cols-[8rem_1fr]">
+              <div className="flex items-center gap-2 sm:block">
+                <p className="font-mono text-xs text-zinc-400">{step.time}</p>
+                <span
+                  className={`mt-0 inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ring-1 ring-inset sm:mt-2 ${
+                    PROGRESS_TONE[step.status]
+                  }`}
+                >
+                  {step.status}
+                </span>
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-zinc-900">
+                  {step.title}
+                </h3>
+                <p className="mt-1 text-sm leading-relaxed text-zinc-500">
+                  {step.detail}
+                </p>
+              </div>
+            </article>
+          ))}
         </div>
-        <TrendChart
-          points={experiment.trend}
-          target={experiment.targetMetric}
-          targetLabel={`${experiment.targetLabel}: ${experiment.targetValue}`}
-        />
       </section>
 
-      <div className="mt-4 grid gap-3 xl:grid-cols-2">
-        <section className="rounded-2xl bg-white/55 p-4 ring-1 ring-zinc-950/5">
-          <h3 className="text-sm font-semibold text-zinc-900">Active run</h3>
-          <div className="mt-3 flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="font-mono text-xs font-semibold text-zinc-900">
-                {activeTrial.id}
-              </p>
-              <p className="mt-1 truncate text-sm font-medium text-zinc-900">
-                {activeTrial.title}
-              </p>
-            </div>
-            <span
-              className={`rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ring-1 ring-inset ring-black/5 ${
-                TRIAL_TONE[activeTrial.status]
-              }`}
-            >
-              {statusLabel(activeTrial.status)}
-            </span>
+      <aside className="space-y-5">
+        <section className="rounded-2xl bg-zinc-50/70 p-4 ring-1 ring-zinc-950/5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+            Current focus
+          </p>
+          <h3 className="mt-3 text-base font-semibold text-zinc-900">
+            {current.title}
+          </h3>
+          <p className="mt-2 text-sm leading-relaxed text-zinc-500">
+            {current.detail}
+          </p>
+          <span
+            className={`mt-4 inline-flex rounded-full px-2.5 py-1 text-xs font-medium capitalize ring-1 ring-inset ${
+              PROGRESS_TONE[current.status]
+            }`}
+          >
+            {current.status}
+          </span>
+        </section>
+
+        <section className="rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+            Next up
+          </p>
+          <div className="mt-3 space-y-3">
+            {queued.length > 0 ? (
+              queued.map((step) => (
+                <div key={step.id}>
+                  <p className="text-sm font-medium text-zinc-900">
+                    {step.title}
+                  </p>
+                  <p className="mt-1 text-sm leading-relaxed text-zinc-500">
+                    {step.detail}
+                  </p>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-zinc-500">No queued steps.</p>
+            )}
           </div>
-          <p className="mt-3 text-sm leading-relaxed text-zinc-500">
-            {activeTrial.summary}
+        </section>
+      </aside>
+    </section>
+  );
+}
+
+function ChangesPanel({ changes }: { changes: ExperimentChange[] }) {
+  return (
+    <section className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
+      <section className="rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
+        <h2 className="text-base font-semibold tracking-tight text-zinc-900">
+          Changes
+        </h2>
+        <p className="mt-1 text-sm text-zinc-500">
+          Files, patches, and validation state for this experiment.
+        </p>
+
+        <div className="mt-5 divide-y divide-zinc-200/70">
+          {changes.map((change) => (
+            <article key={change.id} className="py-4 first:pt-0">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate font-mono text-xs font-medium text-zinc-500">
+                    {change.path}
+                  </p>
+                  <h3 className="mt-2 text-sm font-semibold text-zinc-900">
+                    {change.summary}
+                  </h3>
+                </div>
+                <span
+                  className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ring-1 ring-inset ${
+                    CHANGE_TONE[change.status]
+                  }`}
+                >
+                  {change.status}
+                </span>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <aside className="space-y-5">
+        <section className="rounded-2xl bg-zinc-50/70 p-4 ring-1 ring-zinc-950/5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+            Validation
+          </p>
+          <h3 className="mt-3 text-base font-semibold text-zinc-900">
+            Static checks queued
+          </h3>
+          <p className="mt-2 text-sm leading-relaxed text-zinc-500">
+            Fast validation can run after the selected compression path is applied.
           </p>
         </section>
 
-        <section className="rounded-2xl bg-white/55 p-4 ring-1 ring-zinc-950/5">
-          <h3 className="text-sm font-semibold text-zinc-900">Measurement</h3>
-          <div className="mt-3 divide-y divide-zinc-200/70 text-sm">
-            <div className="flex items-center justify-between gap-3 py-2 first:pt-0">
-              <span className="text-zinc-500">{metricName}</span>
-              <span className="font-semibold text-zinc-900">
-                {activeTrial.metricValue}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-3 py-2">
-              <span className="text-zinc-500">{experiment.targetLabel}</span>
-              <span className="font-semibold text-zinc-900">
-                {experiment.targetValue}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-3 py-2 last:pb-0">
-              <span className="text-zinc-500">Duration</span>
-              <span className="font-semibold text-zinc-900">
-                {activeTrial.duration}
-              </span>
-            </div>
-          </div>
+        <section className="rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+            Review focus
+          </p>
+          <ul className="mt-3 space-y-2 text-sm text-zinc-500">
+            <li>Latency improvement against target p95.</li>
+            <li>Error rate and memory pressure guardrails.</li>
+            <li>Compression default impact on large JSON responses.</li>
+          </ul>
         </section>
-      </div>
+      </aside>
     </section>
   );
 }
 
 function AgentCollab({
   experiment,
-  onApprove,
+  onAnswer,
+  onSendReply,
 }: {
   experiment: Experiment;
-  onApprove: (experiment: Experiment) => void;
+  onAnswer: (experiment: Experiment, answer: string) => void;
+  onSendReply: (experiment: Experiment, text: string) => void;
 }) {
-  const [messages, setMessages] = useState<AgentMessage[]>(
-    experiment.agentMessages,
-  );
   const [reply, setReply] = useState("");
 
   const addReply = (text: string) => {
     const trimmed = text.trim();
     if (!trimmed) return;
 
-    setMessages((current) => [
-      ...current,
-      {
-        id: `local-${Date.now()}`,
-        author: "user",
-        text: trimmed,
-        time: "Just now",
-      },
-    ]);
+    onSendReply(experiment, trimmed);
     setReply("");
   };
 
   return (
-    <aside className="flex min-w-0 flex-col border-zinc-200/70 bg-zinc-50/55 lg:col-span-2 lg:border-t xl:col-span-1 xl:border-l xl:border-t-0">
-      <header className="border-b border-zinc-200/70 bg-white/40 px-5 py-4">
+    <section className="mx-auto flex min-h-[520px] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-zinc-50/70 ring-1 ring-zinc-950/5">
+      <header className="border-b border-zinc-200/70 bg-white/55 px-5 py-4">
         <div className="flex items-center gap-2">
           <Avatar size={28} hue={205}>
             <FlaskIcon className="h-4 w-4 text-white" />
@@ -691,7 +985,7 @@ function AgentCollab({
       </header>
 
       <div className="flex-1 space-y-4 overflow-y-auto px-4 py-5">
-        {messages.map((message) => {
+        {experiment.agentMessages.map((message) => {
           const fromUser = message.author === "user";
           return (
             <div
@@ -732,10 +1026,7 @@ function AgentCollab({
                 <button
                   key={option}
                   type="button"
-                  onClick={() => {
-                    addReply(option);
-                    onApprove(experiment);
-                  }}
+                  onClick={() => onAnswer(experiment, option)}
                   className="rounded-xl bg-white/80 px-3 py-1.5 text-sm font-medium text-zinc-700 ring-1 ring-zinc-950/5 transition-colors hover:bg-white hover:text-blue-700"
                 >
                   {option}
@@ -778,7 +1069,7 @@ function AgentCollab({
           </button>
         </div>
       </form>
-    </aside>
+    </section>
   );
 }
 
@@ -786,21 +1077,55 @@ function ExperimentDetail({
   experiment,
   onBack,
   onApprove,
+  onAnswer,
+  onSendReply,
   onNotify,
 }: {
   experiment: Experiment;
   onBack: () => void;
   onApprove: (experiment: Experiment) => void;
+  onAnswer: (experiment: Experiment, answer: string) => void;
+  onSendReply: (experiment: Experiment, text: string) => void;
   onNotify: (message: string) => void;
 }) {
+  const [detailTab, setDetailTab] = useState<DetailTabId>("overview");
   const metricName = experiment.metricLabel.replace(/^Current\s+/i, "");
   const canApprove = experiment.status === "needs-input";
+  const needsInput = canApprove && Boolean(experiment.pendingQuestion);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onBack();
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [onBack]);
+
+  const activePanel = (() => {
+    switch (detailTab) {
+      case "progress":
+        return <ProgressPanel steps={experiment.progressSteps} />;
+      case "collab":
+        return (
+          <AgentCollab
+            experiment={experiment}
+            onAnswer={onAnswer}
+            onSendReply={onSendReply}
+          />
+        );
+      case "trials":
+        return <TrialsList trials={experiment.trials} metricName={metricName} />;
+      case "changes":
+        return <ChangesPanel changes={experiment.changes} />;
+      case "overview":
+      default:
+        return (
+          <OverviewPanel
+            experiment={experiment}
+            metricName={metricName}
+            onNotify={onNotify}
+          />
+        );
+    }
+  })();
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center px-4 py-5 md:left-64 md:py-8">
@@ -854,7 +1179,16 @@ function ExperimentDetail({
             </div>
 
             <div className="flex shrink-0 items-center gap-2">
-              {canApprove ? (
+              {needsInput ? (
+                <button
+                  type="button"
+                  onClick={() => setDetailTab("collab")}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-amber-500 px-3.5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-amber-600"
+                >
+                  Answer input
+                  <ArrowRightIcon className="h-4 w-4" />
+                </button>
+              ) : canApprove ? (
                 <button
                   type="button"
                   onClick={() => onApprove(experiment)}
@@ -883,22 +1217,26 @@ function ExperimentDetail({
               </button>
             </div>
           </div>
+
+          <div className="mt-5">
+            <DetailStatusStrip experiment={experiment} />
+          </div>
         </header>
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[0.9fr_1.1fr] lg:overflow-hidden xl:grid-cols-[0.72fr_1.08fr_1fr]">
-          <ExperimentSummaryPanel
+        <DetailTabs
+          active={detailTab}
+          needsInput={needsInput}
+          onChange={setDetailTab}
+        />
+
+        <div className="min-h-0 flex-1 overflow-y-auto bg-white/55 px-5 py-4 md:px-6">
+          <PendingInputBanner
             experiment={experiment}
-            metricName={metricName}
-            onNotify={onNotify}
+            onAnswer={onAnswer}
+            onOpenCollab={() => setDetailTab("collab")}
           />
 
-          <OptimizationPanel experiment={experiment} metricName={metricName} />
-
-          <AgentCollab
-            key={experiment.id}
-            experiment={experiment}
-            onApprove={onApprove}
-          />
+          <div className="mx-auto w-full max-w-6xl">{activePanel}</div>
         </div>
       </section>
     </div>
@@ -983,6 +1321,30 @@ export default function Dashboard() {
           status: "running",
         },
       ],
+      progressSteps: [
+        {
+          id: "workspace-created",
+          title: "Workspace created",
+          detail: base.description,
+          status: "active",
+          time: "Just now",
+        },
+        {
+          id: "first-measurement",
+          title: "Collect first measurement",
+          detail: "Run the first trial and record the baseline outcome.",
+          status: "queued",
+          time: "Next",
+        },
+      ],
+      changes: [
+        {
+          id: "initial-workspace",
+          path: base.repo,
+          summary: "Experiment workspace initialized for the requested objective.",
+          status: "planned",
+        },
+      ],
       agentMessages: [
         {
           id: "created-message",
@@ -1000,6 +1362,8 @@ export default function Dashboard() {
       | "metrics"
       | "trend"
       | "trials"
+      | "progressSteps"
+      | "changes"
       | "agentMessages"
     >;
 
@@ -1021,6 +1385,7 @@ export default function Dashboard() {
   };
 
   const handleApprove = (experiment: Experiment) => {
+    const message = "Approved. Resume the run.";
     setItems((prev) =>
       prev.map((e) =>
         e.id === experiment.id
@@ -1032,11 +1397,99 @@ export default function Dashboard() {
               timing: "just resumed",
               delta: undefined,
               pendingQuestion: undefined,
+              agentMessages: [
+                ...e.agentMessages,
+                {
+                  id: `reply-${Date.now()}`,
+                  author: "user",
+                  text: message,
+                  time: "Just now",
+                },
+              ],
+              progressSteps: e.progressSteps.map((step) =>
+                step.status === "blocked"
+                  ? {
+                      ...step,
+                      status: "completed",
+                      detail: "User approved the next run.",
+                      time: "Just now",
+                    }
+                  : step.status === "queued"
+                    ? { ...step, status: "active", time: "Now" }
+                    : step,
+              ),
             }
           : e,
       ),
     );
-    notify(`Approved — ${experiment.title} resumed`);
+    notify(`Approved - ${experiment.title} resumed`);
+  };
+
+  const handleReply = (experiment: Experiment, text: string) => {
+    setItems((prev) =>
+      prev.map((e) =>
+        e.id === experiment.id
+          ? {
+              ...e,
+              agentMessages: [
+                ...e.agentMessages,
+                {
+                  id: `reply-${Date.now()}`,
+                  author: "user",
+                  text,
+                  time: "Just now",
+                },
+              ],
+            }
+          : e,
+      ),
+    );
+    notify("Reply sent");
+  };
+
+  const handleAnswer = (experiment: Experiment, answer: string) => {
+    setItems((prev) =>
+      prev.map((e) =>
+        e.id === experiment.id
+          ? {
+              ...e,
+              status: "running",
+              metricLabel: "Progress",
+              metricValue: "resuming",
+              timing: "just resumed",
+              delta: undefined,
+              pendingQuestion: undefined,
+              agentMessages: [
+                ...e.agentMessages,
+                {
+                  id: `answer-${Date.now()}`,
+                  author: "user",
+                  text: answer,
+                  time: "Just now",
+                },
+              ],
+              progressSteps: e.progressSteps.map((step) =>
+                step.status === "blocked"
+                  ? {
+                      ...step,
+                      status: "completed",
+                      detail: `User selected ${answer}.`,
+                      time: "Just now",
+                    }
+                  : step.status === "queued"
+                    ? { ...step, status: "active", time: "Now" }
+                    : step,
+              ),
+              changes: e.changes.map((change) =>
+                change.status === "planned"
+                  ? { ...change, status: "applied" }
+                  : change,
+              ),
+            }
+          : e,
+      ),
+    );
+    notify(`Answered - ${experiment.title} resumed`);
   };
 
   const handleDelete = (experiment: Experiment) => {
@@ -1183,6 +1636,8 @@ export default function Dashboard() {
           experiment={selected}
           onBack={() => setSelectedId(null)}
           onApprove={handleApprove}
+          onAnswer={handleAnswer}
+          onSendReply={handleReply}
           onNotify={notify}
         />
       )}
