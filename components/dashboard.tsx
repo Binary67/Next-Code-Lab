@@ -11,12 +11,10 @@ import {
 import {
   ArrowRightIcon,
   Avatar,
-  BoltIcon,
   CheckIcon,
   CloseIcon,
   DocsIcon,
   FlaskIcon,
-  PlusCircleIcon,
   PlusIcon,
   RepoIcon,
   SettingsIcon,
@@ -26,12 +24,11 @@ import {
   WarningIcon,
 } from "@/components/icons";
 
-type NavId = "experiments" | "new-experiment" | "repositories" | "settings";
+type NavId = "experiments" | "repositories" | "settings";
 type TabId = "all" | Status;
 
 const PRIMARY_NAV = [
   { id: "experiments", label: "Experiments", Icon: FlaskIcon },
-  { id: "new-experiment", label: "New Experiment", Icon: PlusCircleIcon },
   { id: "repositories", label: "Repositories", Icon: RepoIcon },
   { id: "settings", label: "Settings", Icon: SettingsIcon },
 ] as const;
@@ -379,14 +376,6 @@ export default function Dashboard() {
   const needsInputCount = items.filter((e) => e.status === "needs-input").length;
   const visible = tab === "all" ? items : items.filter((e) => e.status === tab);
 
-  const handleNav = (id: NavId) => {
-    if (id === "new-experiment") {
-      setShowCreate(true);
-      return;
-    }
-    setNav(id);
-  };
-
   const handleCreate = (draft: {
     repo: string;
     title: string;
@@ -475,17 +464,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="px-3">
-          <button
-            type="button"
-            onClick={() => setShowCreate(true)}
-            className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-700 px-3 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-800 active:scale-[0.99]"
-          >
-            <BoltIcon className="h-4 w-4" />
-            New Optimization
-          </button>
-        </div>
-
         <nav className="mt-4 flex-1 px-3">
           <ul className="space-y-0.5">
             {PRIMARY_NAV.map(({ id, label, Icon }) => {
@@ -494,7 +472,7 @@ export default function Dashboard() {
                 <li key={id}>
                   <button
                     type="button"
-                    onClick={() => handleNav(id)}
+                    onClick={() => setNav(id)}
                     className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
                       active
                         ? "bg-blue-50 font-medium text-blue-700"
