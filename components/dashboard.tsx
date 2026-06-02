@@ -147,16 +147,22 @@ function CreateModal({
               >
                 {sourceLabel}
               </label>
-              <div className="grid grid-cols-2 rounded-lg border border-zinc-200 bg-zinc-50 p-0.5">
+              <div className="relative inline-grid h-8 min-w-[164px] grid-cols-2 rounded-full bg-zinc-100 p-0.5 shadow-inner ring-1 ring-zinc-200/80">
+                <span
+                  aria-hidden="true"
+                  className={`absolute top-0.5 bottom-0.5 left-0.5 w-[calc(50%-2px)] rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,0.10),0_1px_8px_rgba(0,0,0,0.06)] ring-1 ring-black/5 transition-transform duration-200 ease-out ${
+                    sourceType === "local" ? "translate-x-full" : "translate-x-0"
+                  }`}
+                />
                 {(["git", "local"] as SourceType[]).map((type) => (
                   <button
                     key={type}
                     type="button"
                     aria-pressed={sourceType === type}
                     onClick={() => setSourceType(type)}
-                    className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                    className={`relative z-10 rounded-full px-3 text-[13px] font-medium transition-colors ${
                       sourceType === type
-                        ? "bg-white text-blue-700 shadow-sm ring-1 ring-zinc-200"
+                        ? "text-zinc-900"
                         : "text-zinc-500 hover:text-zinc-700"
                     }`}
                   >
