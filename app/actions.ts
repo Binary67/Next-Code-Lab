@@ -1,7 +1,9 @@
 "use server";
 
-import { stat } from "node:fs/promises";
-import { isAbsolute, resolve } from "node:path";
+import { execFile as execFileCallback } from "node:child_process";
+import { readdir, rm, stat } from "node:fs/promises";
+import { isAbsolute, relative, resolve } from "node:path";
+import { promisify } from "node:util";
 
 import { CodexEvalSetupAgent } from "@/lib/codex/eval-setup-agent";
 import type {
@@ -40,6 +42,12 @@ type StartExperimentInput = {
   experiment: Experiment;
 };
 
+type DeleteExperimentInput = {
+  experiment: Experiment;
+  remainingExperiments: Experiment[];
+};
+
+const execFileAsync = promisify(execFileCallback);
 const evalSetupAgent = new CodexEvalSetupAgent();
 const experimentOrchestrator = new ExperimentOrchestrator();
 
@@ -52,6 +60,24 @@ function isRemoteRepoPath(repoPath: string) {
     /^[a-z][a-z0-9+.-]*:\/\//i.test(repoPath) ||
     /^[\w.-]+@[\w.-]+:.+/.test(repoPath)
   );
+}
+
+function isMissingFile(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: string }).code === "ENOENT"
+  );
+}
+
+async function runGit(cwd: string, args: string[]) {
+  const { stdout } = await execFileAsync("git", args, {
+    cwd,
+    maxBuffer: 10 * 1024 * 1024,
+  });
+
+  return stdout.trim();
 }
 
 async function resolveLocalRepoPath(repoPath: string) {
@@ -83,6 +109,28 @@ function requiredString(value: string, field: string) {
   return value.trim();
 }
 
+function requiredExperimentId(value: string) {
+  const experimentId = requiredString(value, "experiment ID");
+
+  if (!/^[a-z0-9-]+$/.test(experimentId)) {
+    throw new Error("Experiment ID contains unsupported characters.");
+  }
+
+  return experimentId;
+}
+
+function localExperimentPath(kind: "evals" | "worktrees", experimentId: string) {
+  const root = resolve(process.cwd(), ".local", kind);
+  const target = resolve(root, experimentId);
+  const rel = relative(root, target);
+
+  if (!rel || rel.startsWith("..") || isAbsolute(rel)) {
+    throw new Error("Experiment cleanup path must stay under .local.");
+  }
+
+  return target;
+}
+
 function validateScriptPath(scriptPath: string) {
   if (
     scriptPath.startsWith("/") ||
@@ -92,6 +140,54 @@ function validateScriptPath(scriptPath: string) {
   }
 
   return scriptPath;
+}
+
+async function readChildDirectories(path: string) {
+  try {
+    const entries = await readdir(path, { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => resolve(path, entry.name));
+  } catch (error) {
+    if (isMissingFile(error)) {
+      return [];
+    }
+
+    throw error;
+  }
+}
+
+async function removeExperimentWorktrees(
+  repoRoot: string,
+  experimentId: string,
+) {
+  const root = localExperimentPath("worktrees", experimentId);
+  const worktrees = await readChildDirectories(root);
+
+  for (const worktree of worktrees) {
+    try {
+      await runGit(repoRoot, ["worktree", "remove", "--force", worktree]);
+    } catch {
+      await rm(worktree, { recursive: true, force: true });
+    }
+  }
+
+  await runGit(repoRoot, ["worktree", "prune"]);
+  await rm(root, { recursive: true, force: true });
+}
+
+async function deleteExperimentBranches(repoRoot: string, experimentId: string) {
+  const output = await runGit(repoRoot, [
+    "branch",
+    "--format=%(refname:short)",
+    "--list",
+    `optimizer/${experimentId}/*`,
+  ]);
+  const branches = output.split("\n").filter(Boolean);
+
+  for (const branch of branches) {
+    await runGit(repoRoot, ["branch", "-D", branch]);
+  }
 }
 
 function normalizeContract(
@@ -116,6 +212,32 @@ function normalizeContract(
 
 export async function saveExperiments(experiments: Experiment[]) {
   await writeExperiments(experiments);
+}
+
+export async function deleteExperiment(
+  input: DeleteExperimentInput,
+): Promise<ActionResult<null>> {
+  try {
+    const experimentId = requiredExperimentId(input.experiment.id);
+    const repoPath = await resolveLocalRepoPath(input.experiment.repo);
+    const repoRoot = await runGit(repoPath, ["rev-parse", "--show-toplevel"]);
+
+    await removeExperimentWorktrees(repoRoot, experimentId);
+    await deleteExperimentBranches(repoRoot, experimentId);
+    await rm(localExperimentPath("evals", experimentId), {
+      recursive: true,
+      force: true,
+    });
+    await writeExperiments(
+      input.remainingExperiments.filter(
+        (experiment) => experiment.id !== experimentId,
+      ),
+    );
+
+    return { ok: true, data: null };
+  } catch (error) {
+    return { ok: false, error: errorMessage(error) };
+  }
 }
 
 export async function startEvalInterview(

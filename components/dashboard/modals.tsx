@@ -191,7 +191,7 @@ export function DeleteModal({
             Delete experiment?
           </h2>
           <p className="mt-1 text-sm leading-relaxed text-zinc-500">
-            Remove this experiment from local storage.
+            Remove this experiment, generated evals, worktrees, and optimizer branches.
           </p>
         </div>
         <button

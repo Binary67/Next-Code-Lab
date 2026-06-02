@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   approveGeneratedEvaluation as approveGeneratedEvaluationAction,
+  deleteExperiment as deleteExperimentAction,
   saveExperiments,
   sendEvalSetupReply as sendEvalSetupReplyAction,
   startExperiment as startExperimentAction,
@@ -364,8 +365,19 @@ export default function Dashboard({
     notify("Answered - " + experiment.title + " resumed");
   };
 
-  const handleDelete = (experiment: Experiment) => {
-    setItems((prev) => prev.filter((e) => e.id !== experiment.id));
+  const handleDelete = async (experiment: Experiment) => {
+    const remainingExperiments = items.filter((e) => e.id !== experiment.id);
+    const result = await deleteExperimentAction({
+      experiment,
+      remainingExperiments,
+    });
+
+    if (!result.ok) {
+      notify(result.error);
+      return;
+    }
+
+    setItems(remainingExperiments);
     setSelectedId((current) => (current === experiment.id ? null : current));
     setDeleteFor(null);
     notify('Deleted "' + experiment.title + '"');

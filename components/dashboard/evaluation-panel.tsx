@@ -561,7 +561,8 @@ export function EvaluationPanel({
           <ul className="mt-3 space-y-2 text-sm text-zinc-500">
             <li>Command exits 0 when the eval runs successfully.</li>
             <li>Stdout prints one numeric score.</li>
-            <li>Target repo path is available as OPTIMIZER_TARGET_REPO.</li>
+            <li>Candidate eval worktree is available as OPTIMIZER_TARGET_REPO.</li>
+            <li>Original repo path is available as OPTIMIZER_BASE_REPO.</li>
             <li>Non-zero exit marks the trial invalid.</li>
             <li>Any improvement in the chosen direction counts.</li>
           </ul>

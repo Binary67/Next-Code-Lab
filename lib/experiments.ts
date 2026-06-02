@@ -28,6 +28,8 @@ export type ExperimentTrial = {
   threadId?: string;
   branchName?: string;
   worktreePath?: string;
+  agentWorktreePath?: string;
+  evalWorktreePath?: string;
   commitSha?: string;
   score?: number;
   evalsUsed?: number;

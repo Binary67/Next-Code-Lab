@@ -29,10 +29,11 @@ type RunExperimentInput = {
   repoPath: string;
 };
 
-type TrialWorktree = {
+type TrialWorktrees = {
   id: string;
   branchName: string;
-  path: string;
+  agentPath: string;
+  evalPath: string;
 };
 
 function formatScore(score: number) {
@@ -99,17 +100,18 @@ async function createBaselineWorktree(
   return path;
 }
 
-async function createTrialWorktree(
+async function createTrialWorktrees(
   repoRoot: string,
   experimentId: string,
   trialNumber: number,
   baseCommit: string,
-): Promise<TrialWorktree> {
+): Promise<TrialWorktrees> {
   const id = `T-${String(trialNumber).padStart(2, "0")}`;
   const slug = `trial-${String(trialNumber).padStart(3, "0")}`;
   const branchName = `optimizer/${experimentId}/${slug}`;
   const root = worktreeRoot(experimentId);
-  const path = join(root, slug);
+  const agentPath = join(root, `${slug}-agent`);
+  const evalPath = join(root, `${slug}-eval`);
 
   await mkdir(root, { recursive: true });
   await runGit(repoRoot, [
@@ -117,11 +119,12 @@ async function createTrialWorktree(
     "add",
     "-B",
     branchName,
-    path,
+    agentPath,
     baseCommit,
   ]);
+  await runGit(repoRoot, ["worktree", "add", "--detach", evalPath, baseCommit]);
 
-  return { id, branchName, path };
+  return { id, branchName, agentPath, evalPath };
 }
 
 function commandErrorMessage(error: unknown) {
@@ -135,6 +138,7 @@ function commandErrorMessage(error: unknown) {
 async function runEvaluation(
   contract: TrialEvaluationContract,
   targetRepoPath: string,
+  baseRepoPath: string,
 ) {
   try {
     const { stdout } = await execAsync(contract.runCommand, {
@@ -142,7 +146,7 @@ async function runEvaluation(
       env: {
         ...process.env,
         OPTIMIZER_TARGET_REPO: targetRepoPath,
-        OPTIMIZER_WORKTREE: targetRepoPath,
+        OPTIMIZER_BASE_REPO: baseRepoPath,
       },
       maxBuffer: 10 * 1024 * 1024,
     });
@@ -160,23 +164,29 @@ async function runEvaluation(
   }
 }
 
-async function commitTrialChanges(worktreePath: string, trialId: string) {
-  const status = await runGit(worktreePath, ["status", "--porcelain"]);
-
-  if (status) {
-    await runGit(worktreePath, ["add", "-A"]);
-    await runGit(worktreePath, [
-      "-c",
-      "user.name=Optimizer Lab",
-      "-c",
-      "user.email=optimizer-lab@example.invalid",
-      "commit",
-      "-m",
-      `Optimizer trial ${trialId}`,
-    ]);
-  }
+async function snapshotTrialChanges(
+  worktreePath: string,
+  trialId: string,
+  evalNumber: number,
+) {
+  await runGit(worktreePath, ["add", "-A"]);
+  await runGit(worktreePath, [
+    "-c",
+    "user.name=Optimizer Lab",
+    "-c",
+    "user.email=optimizer-lab@example.invalid",
+    "commit",
+    "--allow-empty",
+    "-m",
+    `Optimizer trial ${trialId} eval ${evalNumber}`,
+  ]);
 
   return runGit(worktreePath, ["rev-parse", "HEAD"]);
+}
+
+async function resetEvalWorktree(worktreePath: string, commitSha: string) {
+  await runGit(worktreePath, ["reset", "--hard", commitSha]);
+  await runGit(worktreePath, ["clean", "-fdx"]);
 }
 
 async function persistExperiment(experiment: Experiment) {
@@ -368,7 +378,7 @@ export class ExperimentOrchestrator {
         experiment.id,
         baseCommit,
       );
-      baselineScore = await runEvaluation(contract, baselineWorktree);
+      baselineScore = await runEvaluation(contract, baselineWorktree, repoRoot);
     } catch (error) {
       const failed = this.failBeforeTrials(
         experiment,
@@ -455,7 +465,7 @@ export class ExperimentOrchestrator {
     const { experiment, contract, baselineScore, trialNumber, evalBudget } =
       input;
     const startedAt = new Date().toISOString();
-    const worktree = await createTrialWorktree(
+    const worktree = await createTrialWorktrees(
       input.repoRoot,
       experiment.id,
       trialNumber,
@@ -469,7 +479,8 @@ export class ExperimentOrchestrator {
       duration: "Running",
       status: "running",
       branchName: worktree.branchName,
-      worktreePath: worktree.path,
+      agentWorktreePath: worktree.agentPath,
+      evalWorktreePath: worktree.evalPath,
       evalsUsed: 0,
       improved: false,
       startedAt,
@@ -478,7 +489,7 @@ export class ExperimentOrchestrator {
 
     try {
       let turn = await this.trialAgent.startTrial({
-        repoPath: worktree.path,
+        repoPath: worktree.agentPath,
         objective: experiment.objective,
         scoreName: contract.scoreName,
         scoreDirection: contract.scoreDirection,
@@ -510,8 +521,18 @@ export class ExperimentOrchestrator {
           break;
         }
 
-        const score = await runEvaluation(contract, worktree.path);
         const evalsUsed = trial.evalsUsed + 1;
+        const commitSha = await snapshotTrialChanges(
+          worktree.agentPath,
+          trial.id,
+          evalsUsed,
+        );
+        await resetEvalWorktree(worktree.evalPath, commitSha);
+        const score = await runEvaluation(
+          contract,
+          worktree.evalPath,
+          input.repoRoot,
+        );
         const improved = isScoreImproved(
           score,
           baselineScore,
@@ -538,7 +559,6 @@ export class ExperimentOrchestrator {
         await persistExperiment(nextExperiment);
 
         if (improved) {
-          const commitSha = await commitTrialChanges(worktree.path, trial.id);
           trial = {
             ...trial,
             commitSha,
@@ -555,7 +575,7 @@ export class ExperimentOrchestrator {
 
         turn = await this.trialAgent.continueTrial({
           trialThreadId: turn.trialThreadId,
-          repoPath: worktree.path,
+          repoPath: worktree.agentPath,
           instruction: buildEvalFeedback(score, false, evalBudget - evalsUsed),
         });
         trial = { ...trial, summary: turn.response.message };
