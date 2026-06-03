@@ -13,7 +13,7 @@ import { AgentCollab } from "./agent-collab";
 import { ChangesPanel } from "./changes-panel";
 import { RunPanel } from "./run-panel";
 import { STATUS_TONE, statusLabel } from "./shared";
-import { directionLabel, evaluationStatusLabel } from "./evaluation-utils";
+import { evaluationStatusLabel } from "./evaluation-utils";
 
 const DETAIL_TABS: { id: DetailTabId; label: string }[] = [
   { id: "evaluation", label: "Evaluation" },
@@ -52,72 +52,136 @@ function experimentTokenUsage(experiment: Experiment) {
   );
 }
 
+type DetailStatusChip = {
+  label: string;
+  value: string;
+  tone?: "default" | "info" | "success" | "warning" | "danger";
+};
+
+const DETAIL_STATUS_TONE: Record<NonNullable<DetailStatusChip["tone"]>, string> =
+  {
+    default: "bg-white/75 text-zinc-700 ring-zinc-200/80",
+    info: "bg-blue-50 text-blue-700 ring-blue-200/80",
+    success: "bg-emerald-50 text-emerald-700 ring-emerald-200/80",
+    warning: "bg-amber-50 text-amber-700 ring-amber-200/80",
+    danger: "bg-rose-50 text-rose-700 ring-rose-200/80",
+  };
+
+function pluralize(value: number, singular: string) {
+  return `${value} ${singular}${value === 1 ? "" : "s"}`;
+}
+
+function trialProgress(experiment: Experiment) {
+  const completed = experiment.trials.filter(
+    (trial) => trial.status !== "running",
+  ).length;
+
+  return `${completed}/${experiment.trialCount} trials`;
+}
+
+function latestTrialValue(trial: ExperimentTrial) {
+  if (trial.metricValue && trial.metricValue !== "pending") {
+    return `${trial.id} / ${trial.metricValue}`;
+  }
+
+  return trial.id;
+}
+
 function DetailStatusStrip({ experiment }: { experiment: Experiment }) {
   const latestTrial: ExperimentTrial | undefined = experiment.trials[0];
-  const trials = experiment.metrics.find((metric) => metric.label === "Trials");
   const evaluation = experiment.evaluation;
   const tokenUsage = experimentTokenUsage(experiment);
   const tokenTotal = tokenUsage.inputTokens + tokenUsage.outputTokens;
-  const statusDetail = experiment.pendingQuestion
-    ? "User input required"
-    : experiment.timing ?? latestTrial?.duration ?? "Not started";
-  const items = [
-    {
-      label: "State",
-      value: statusLabel(experiment.status),
-      detail: statusDetail,
-    },
-    {
-      label: experiment.metricLabel,
-      value: experiment.metricValue,
-      detail: "Current",
-    },
-    {
-      label: "Score",
+  const tokenChip: DetailStatusChip | undefined =
+    tokenTotal > 0
+      ? { label: "Tokens", value: formatTokenCount(tokenTotal) }
+      : undefined;
+  const items: DetailStatusChip[] = [];
+
+  if (experiment.status === "setup") {
+    items.push(
+      {
+        label: "Evaluation",
+        value: evaluationStatusLabel(evaluation.status),
+        tone: evaluation.status === "ready" ? "success" : "warning",
+      },
+      { label: "Trials", value: pluralize(experiment.trialCount, "trial") },
+      {
+        label: "Eval budget",
+        value: `${pluralize(experiment.evalBudgetPerTrial, "eval")}/trial`,
+      },
+    );
+  }
+
+  if (experiment.status === "running") {
+    items.push(
+      {
+        label: experiment.metricLabel.replace(/^Current\s+/i, "") || "Score",
+        value: experiment.metricValue,
+        tone: "info",
+      },
+    );
+
+    if (experiment.targetValue && experiment.targetValue !== "Not set") {
+      items.push({ label: "Baseline", value: experiment.targetValue });
+    }
+
+    items.push({ label: "Trials", value: trialProgress(experiment) });
+    if (tokenChip) items.push(tokenChip);
+  }
+
+  if (experiment.status === "needs-input") {
+    items.push({ label: "Input", value: "Required", tone: "warning" });
+    if (latestTrial) {
+      items.push({ label: "Latest", value: latestTrialValue(latestTrial) });
+    }
+    items.push({ label: "Trials", value: trialProgress(experiment) });
+  }
+
+  if (experiment.status === "completed") {
+    items.push({
+      label: experiment.metricValue === "no improvement" ? "Result" : "Best",
       value:
-        evaluation.status === "ready" ? evaluation.scoreName || "score" : "Not set",
-      detail:
-        evaluation.status === "ready"
-          ? directionLabel(evaluation.scoreDirection)
-          : "Not set",
-    },
-    {
-      label: "Latest trial",
-      value: latestTrial?.id ?? "None",
-      detail: latestTrial?.metricValue ?? "Not measured",
-    },
-    {
-      label: "Elapsed",
-      value:
-        trials?.detail.replace(" elapsed", "") ??
-        latestTrial?.duration ??
-        "Not started",
-      detail: `${trials?.value ?? experiment.trials.length} trials`,
-    },
-    {
-      label: "Tokens",
-      value: tokenTotal > 0 ? formatTokenCount(tokenTotal) : "None",
-      detail:
-        tokenUsage.cachedInputTokens > 0
-          ? `${formatTokenCount(tokenUsage.cachedInputTokens)} cached`
-          : "No usage yet",
-    },
-  ];
+        experiment.metricValue === "no improvement"
+          ? "No improvement"
+          : experiment.metricValue,
+      tone: experiment.metricValue === "no improvement" ? "default" : "success",
+    });
+    items.push({ label: "Trials", value: trialProgress(experiment) });
+    if (tokenChip) items.push(tokenChip);
+  }
+
+  if (experiment.status === "failed") {
+    items.push({
+      label: "Failed",
+      value: experiment.timing ?? "Failed",
+      tone: "danger",
+    });
+    if (latestTrial) {
+      items.push({ label: "Latest", value: latestTrialValue(latestTrial) });
+    }
+    if (experiment.trials.length > 0) {
+      items.push({ label: "Trials", value: trialProgress(experiment) });
+    }
+  }
 
   return (
-    <div className="grid gap-px overflow-hidden rounded-2xl bg-zinc-300/80 shadow-sm ring-1 ring-zinc-950/10 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+    <div className="flex flex-wrap items-center gap-2">
       {items.map((item) => (
-        <div key={item.label} className="min-w-0 bg-zinc-50/95 px-3.5 py-3">
-          <p className="truncate text-xs font-medium text-zinc-500">
+        <span
+          key={item.label}
+          aria-label={`${item.label}: ${item.value}`}
+          className={`inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${
+            DETAIL_STATUS_TONE[item.tone ?? "default"]
+          }`}
+        >
+          <span className="shrink-0 opacity-70">
             {item.label}
-          </p>
-          <p className="mt-1 truncate text-sm font-semibold text-zinc-900">
+          </span>
+          <span className="min-w-0 truncate font-semibold">
             {item.value}
-          </p>
-          <p className="mt-0.5 truncate text-xs text-zinc-400">
-            {item.detail}
-          </p>
-        </div>
+          </span>
+        </span>
       ))}
     </div>
   );
@@ -421,7 +485,7 @@ export function ExperimentDetail({
             </div>
           </div>
 
-          <div className="mt-5">
+          <div className="mt-4">
             <DetailStatusStrip experiment={experiment} />
           </div>
         </header>
