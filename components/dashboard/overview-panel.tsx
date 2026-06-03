@@ -1,13 +1,10 @@
 import { useState } from "react";
 import type {
   Experiment,
-  ExperimentMetric,
   ExperimentTrial,
   TrendPoint,
 } from "@/lib/experiments";
-import { CloseIcon, PauseIcon } from "@/components/icons";
 import {
-  ComingSoonPanel,
   EmptyState,
   TRIAL_TONE,
   WorkflowPageLayout,
@@ -15,47 +12,7 @@ import {
 } from "./shared";
 import type { WorkflowPageItem } from "./shared";
 
-type OverviewPageId =
-  | "overview"
-  | "active-run"
-  | "measurements"
-  | "metrics-controls";
-
-function MetricsList({ metrics }: { metrics: ExperimentMetric[] }) {
-  return (
-    <section>
-      <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-        Metrics
-      </h2>
-      {metrics.length === 0 ? (
-        <div className="mt-3">
-          <EmptyState title="Metrics will appear after the first trial completes." />
-        </div>
-      ) : (
-        <div className="mt-3 divide-y divide-zinc-200/70 overflow-hidden rounded-2xl bg-white/55 ring-1 ring-zinc-950/5">
-          {metrics.map((metric) => (
-            <div
-              key={metric.label}
-              className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3"
-            >
-              <div className="min-w-0">
-                <p className="text-xs font-medium text-zinc-500">
-                  {metric.label}
-                </p>
-                <p className="mt-0.5 truncate text-xs text-zinc-400">
-                  {metric.detail}
-                </p>
-              </div>
-              <p className="text-right text-base font-semibold tracking-tight text-zinc-900">
-                {metric.value}
-              </p>
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
+type OverviewPageId = "overview" | "active-run" | "measurements";
 
 function formatTrendValue(value: number, unit = "") {
   return `${value.toFixed(4)}${unit}`;
@@ -209,11 +166,9 @@ function TrendChart({
 export function OverviewPanel({
   experiment,
   metricName,
-  onNotify,
 }: {
   experiment: Experiment;
   metricName: string;
-  onNotify: (message: string) => void;
 }) {
   const [pageSelection, setPageSelection] = useState<{
     experimentId: string;
@@ -251,11 +206,6 @@ export function OverviewPanel({
       id: "measurements",
       label: "Measurements",
       detail: activeTrial?.metricValue ?? "No score",
-    },
-    {
-      id: "metrics-controls",
-      label: "Metrics & Controls",
-      detail: `${experiment.metrics.length} metrics`,
     },
   ];
 
@@ -383,46 +333,9 @@ export function OverviewPanel({
     </div>
   );
 
-  const metricsControlsPage = (
-    <div className="h-full overflow-y-auto bg-white p-4 scrollbar-hidden">
-      <div className="grid gap-5 xl:grid-cols-[0.8fr_1.2fr]">
-        <section className="rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-            Run controls
-          </h2>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => onNotify(`${experiment.title} paused`)}
-              className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-white px-3 py-2 text-sm font-medium text-zinc-700 ring-1 ring-zinc-950/5 transition-colors hover:bg-zinc-50"
-            >
-              <PauseIcon className="h-4 w-4" />
-              Pause
-            </button>
-            <button
-              type="button"
-              onClick={() => onNotify(`${experiment.title} stopped`)}
-              className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 ring-1 ring-rose-200/70 transition-colors hover:bg-rose-100"
-            >
-              <CloseIcon className="h-4 w-4" />
-              Stop
-            </button>
-          </div>
-        </section>
-
-        <MetricsList metrics={experiment.metrics} />
-
-        <div className="xl:col-span-2">
-          <ComingSoonPanel title="Guardrails and spend" />
-        </div>
-      </div>
-    </div>
-  );
-
   const activeContent = (() => {
     if (activePage === "active-run") return activeRunPage;
     if (activePage === "measurements") return measurementsPage;
-    if (activePage === "metrics-controls") return metricsControlsPage;
     return overviewPage;
   })();
 

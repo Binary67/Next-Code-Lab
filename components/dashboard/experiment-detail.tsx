@@ -5,7 +5,12 @@ import type {
   ExperimentEvaluation,
   ExperimentTrial,
 } from "@/lib/experiments";
-import { ArrowRightIcon, CloseIcon, WarningIcon } from "@/components/icons";
+import {
+  ArrowRightIcon,
+  CloseIcon,
+  PauseIcon,
+  WarningIcon,
+} from "@/components/icons";
 import type { DetailTabId, EvalSetupPendingAction } from "./types";
 import { EvaluationPanel } from "./evaluation-panel";
 import { OverviewPanel } from "./overview-panel";
@@ -300,7 +305,10 @@ export function ExperimentDetail({
   onStartEvalInterview,
   onSendEvalSetupReply,
   onApproveGeneratedEvaluation,
-  onNotify,
+  isRunPaused,
+  onPause,
+  onResume,
+  onStop,
   startPending,
 }: {
   experiment: Experiment;
@@ -321,7 +329,10 @@ export function ExperimentDetail({
   onStartEvalInterview: (experiment: Experiment) => void;
   onSendEvalSetupReply: (experiment: Experiment, text: string) => void;
   onApproveGeneratedEvaluation: (experiment: Experiment) => void;
-  onNotify: (message: string) => void;
+  isRunPaused: boolean;
+  onPause: (experiment: Experiment) => void;
+  onResume: (experiment: Experiment) => void;
+  onStop: (experiment: Experiment) => void;
   startPending?: boolean;
 }) {
   const [detailTab, setDetailTab] = useState<DetailTabId>(
@@ -373,7 +384,6 @@ export function ExperimentDetail({
           <OverviewPanel
             experiment={experiment}
             metricName={metricName}
-            onNotify={onNotify}
           />
         );
     }
@@ -437,7 +447,9 @@ export function ExperimentDetail({
                   onClick={() => onStart(experiment)}
                   disabled={!canStart}
                   title={
-                    canStart
+                    startPending
+                      ? "Starting..."
+                      : canStart
                       ? "Start experiment"
                       : "Complete evaluation setup first"
                   }
@@ -446,6 +458,31 @@ export function ExperimentDetail({
                   {startPending ? "Starting..." : "Start experiment"}
                   <ArrowRightIcon className="h-4 w-4" />
                 </button>
+              ) : experiment.status === "running" ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      isRunPaused ? onResume(experiment) : onPause(experiment)
+                    }
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700"
+                  >
+                    {isRunPaused ? (
+                      <ArrowRightIcon className="h-4 w-4" />
+                    ) : (
+                      <PauseIcon className="h-4 w-4" />
+                    )}
+                    {isRunPaused ? "Resume" : "Pause"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onStop(experiment)}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-rose-50 px-3.5 py-2 text-sm font-medium text-rose-700 ring-1 ring-rose-200/70 transition-colors hover:bg-rose-100"
+                  >
+                    <CloseIcon className="h-4 w-4" />
+                    Stop
+                  </button>
+                </>
               ) : needsInput ? (
                 <button
                   type="button"

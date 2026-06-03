@@ -52,6 +52,9 @@ export default function Dashboard({
     action: EvalSetupPendingAction;
   } | null>(null);
   const [runPendingId, setRunPendingId] = useState<string | null>(null);
+  const [pausedRunIds, setPausedRunIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const { toast, notify } = useDashboardToast();
   const { items, setItems } = useExperimentSync({
     initialExperiments,
@@ -63,6 +66,17 @@ export default function Dashboard({
     selected && evalSetupPending?.experimentId === selected.id
       ? evalSetupPending.action
       : undefined;
+  const selectedRunPaused =
+    selected?.status === "running" && pausedRunIds.has(selected.id);
+
+  const clearPausedRun = (experimentId: string) => {
+    setPausedRunIds((current) => {
+      if (!current.has(experimentId)) return current;
+      const next = new Set(current);
+      next.delete(experimentId);
+      return next;
+    });
+  };
 
   const handleCreate = (draft: ExperimentDraft) => {
     const experiment = createExperimentFromDraft(draft);
@@ -252,6 +266,7 @@ export default function Dashboard({
       return;
     }
 
+    clearPausedRun(experiment.id);
     setRunPendingId(experiment.id);
     notify('Starting "' + experiment.title + '"');
 
@@ -278,6 +293,7 @@ export default function Dashboard({
     setItems((prev) =>
       prev.map((e) => (e.id === experiment.id ? approveExperiment(e) : e)),
     );
+    clearPausedRun(experiment.id);
     notify("Approved - " + experiment.title + " resumed");
   };
 
@@ -294,7 +310,26 @@ export default function Dashboard({
         e.id === experiment.id ? answerPendingQuestion(e, answer) : e,
       ),
     );
+    clearPausedRun(experiment.id);
     notify("Answered - " + experiment.title + " resumed");
+  };
+
+  const handlePause = (experiment: Experiment) => {
+    setPausedRunIds((current) => {
+      const next = new Set(current);
+      next.add(experiment.id);
+      return next;
+    });
+    notify(experiment.title + " paused");
+  };
+
+  const handleResume = (experiment: Experiment) => {
+    clearPausedRun(experiment.id);
+    notify(experiment.title + " resumed");
+  };
+
+  const handleStop = (experiment: Experiment) => {
+    notify(experiment.title + " stopped");
   };
 
   const handleDelete = async (experiment: Experiment) => {
@@ -358,7 +393,10 @@ export default function Dashboard({
           onStartEvalInterview={handleStartEvalInterview}
           onSendEvalSetupReply={handleEvalSetupReply}
           onApproveGeneratedEvaluation={handleApproveGeneratedEvaluation}
-          onNotify={notify}
+          isRunPaused={selectedRunPaused}
+          onPause={handlePause}
+          onResume={handleResume}
+          onStop={handleStop}
           startPending={runPendingId === selected.id}
         />
       )}
