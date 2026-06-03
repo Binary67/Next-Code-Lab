@@ -9,7 +9,9 @@ import { ArrowRightIcon, CloseIcon, WarningIcon } from "@/components/icons";
 import type { DetailTabId, EvalSetupPendingAction } from "./types";
 import { EvaluationPanel } from "./evaluation-panel";
 import { OverviewPanel } from "./overview-panel";
-import { AgentCollab, ChangesPanel, RunPanel } from "./run-panels";
+import { AgentCollab } from "./agent-collab";
+import { ChangesPanel } from "./changes-panel";
+import { RunPanel } from "./run-panel";
 import { STATUS_TONE, statusLabel } from "./shared";
 import { directionLabel, evaluationStatusLabel } from "./evaluation-utils";
 
