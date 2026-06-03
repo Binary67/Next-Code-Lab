@@ -1,4 +1,8 @@
-import type { TokenUsage, TrialEvaluationContract } from "./codex/types";
+import type {
+  RepoRunbook,
+  TokenUsage,
+  TrialEvaluationContract,
+} from "./codex/types";
 
 export type Status = "setup" | "running" | "needs-input" | "completed" | "failed";
 export type ScoreDirection = "minimize" | "maximize";
@@ -89,6 +93,7 @@ export type Experiment = {
   repo: string;
   title: string;
   description: string;
+  runbook?: RepoRunbook;
   status: Status;
   trialCount: number;
   evalBudgetPerTrial: number;

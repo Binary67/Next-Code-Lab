@@ -2,17 +2,19 @@ import type { Thread, ThreadEvent, ThreadOptions } from "@openai/codex-sdk";
 
 import type {
   ContinueTrialInput,
+  RepoRunbook,
   StartTrialInput,
   TokenUsage,
   TrialAgentResponse,
   TrialAgentResult,
 } from "./types";
 import { createCodexClient } from "./client";
+import { formatRunbookForPrompt } from "./runbook-agent";
 
 const trialThreadOptions = {
   sandboxMode: "workspace-write",
   approvalPolicy: "never",
-  networkAccessEnabled: false,
+  networkAccessEnabled: true,
 } satisfies Pick<
   ThreadOptions,
   "sandboxMode" | "approvalPolicy" | "networkAccessEnabled"
@@ -98,11 +100,24 @@ function parseTrialResponse(finalResponse: string): TrialAgentResponse {
   };
 }
 
+function runbookSection(runbook: RepoRunbook | undefined) {
+  if (!runbook) {
+    return [
+      "Public repo runbook: not available.",
+      "Discover repo commands from local files before running or changing code.",
+    ].join("\n");
+  }
+
+  return ["Public repo runbook:", formatRunbookForPrompt(runbook)].join("\n");
+}
+
 function startInstruction(input: StartTrialInput) {
   return [
     "You are running one isolated optimization trial for this repository.",
     `Trial number: ${input.trialNumber}`,
     `Optimization objective: ${input.objective}`,
+    "",
+    runbookSection(input.runbook),
     "",
     "Hidden evaluation:",
     `- Score name: ${input.scoreName}`,
@@ -112,6 +127,9 @@ function startInstruction(input: StartTrialInput) {
     "",
     "Do not search for, create, modify, or run the evaluation script.",
     "Optimize the codebase based on the objective and metric name only.",
+    "You may use network access and add dependencies when useful.",
+    "Dependency changes must be reproducible from the repository state: update and commit manifests and lockfiles rather than relying on global or session-only installs.",
+    "Use the public runbook's setup commands, run prefixes, workflows, and repo conventions when running local checks or project commands.",
     "When you have made changes that should be scored, return status request_eval.",
     "If you are done without needing another score, return status done.",
     "If you cannot proceed without user input, return status blocked.",

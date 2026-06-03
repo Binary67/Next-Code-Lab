@@ -120,11 +120,11 @@ export default function Dashboard({
         return;
       }
 
-      const { evalSetupThreadId, response } = result.data;
+      const { evalSetupThreadId, response, runbook } = result.data;
       setItems((prev) =>
         prev.map((e) =>
           e.id === experiment.id
-            ? applyEvalSetupStarted(e, evalSetupThreadId, response)
+            ? applyEvalSetupStarted(e, evalSetupThreadId, response, runbook)
             : e,
         ),
       );
@@ -163,6 +163,7 @@ export default function Dashboard({
         threadId,
         repoPath: experiment.repo,
         reply: text,
+        runbook: experiment.runbook,
       });
 
       if (!result.ok) {
@@ -170,10 +171,12 @@ export default function Dashboard({
         return;
       }
 
-      const { response } = result.data;
+      const { response, runbook } = result.data;
       setItems((prev) =>
         prev.map((e) =>
-          e.id === experiment.id ? applyEvalSetupReply(e, text, response) : e,
+          e.id === experiment.id
+            ? applyEvalSetupReply(e, text, response, runbook)
+            : e,
         ),
       );
       notify(
@@ -212,6 +215,7 @@ export default function Dashboard({
         threadId: experiment.evaluation.evalSetupThreadId,
         repoPath: experiment.repo,
         proposedContract: experiment.evaluation.proposedContract,
+        runbook: experiment.runbook,
       });
 
       if (!result.ok) {
@@ -219,7 +223,7 @@ export default function Dashboard({
         return;
       }
 
-      const { response } = result.data;
+      const { response, runbook } = result.data;
       const contract = getEvalSetupContract(response);
 
       if (!contract) {
@@ -230,7 +234,7 @@ export default function Dashboard({
       setItems((prev) =>
         prev.map((e) =>
           e.id === experiment.id
-            ? applyGeneratedEvaluationApproval(e, response, contract)
+            ? applyGeneratedEvaluationApproval(e, response, contract, runbook)
             : e,
         ),
       );

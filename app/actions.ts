@@ -6,8 +6,13 @@ import { isAbsolute, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 
 import { CodexEvalSetupAgent } from "@/lib/codex/eval-setup-agent";
+import {
+  CodexRunbookAgent,
+  parseRepoRunbook,
+} from "@/lib/codex/runbook-agent";
 import type {
   EvalSetupAgentResult,
+  RepoRunbook,
   TrialEvaluationContract,
 } from "@/lib/codex/types";
 import { writeGeneratedEvalScript } from "@/lib/eval-artifacts";
@@ -17,6 +22,10 @@ import type { Experiment } from "@/lib/experiments";
 import { deleteExperimentTrialLogs } from "@/lib/trial-log-store";
 
 type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
+
+type EvalSetupActionResult = EvalSetupAgentResult & {
+  runbook: RepoRunbook;
+};
 
 type StartEvalInterviewInput = {
   experimentId: string;
@@ -30,6 +39,7 @@ type SendEvalSetupReplyInput = {
   threadId: string;
   repoPath: string;
   reply: string;
+  runbook?: RepoRunbook;
 };
 
 type ApproveGeneratedEvaluationInput = {
@@ -37,6 +47,7 @@ type ApproveGeneratedEvaluationInput = {
   threadId: string;
   repoPath: string;
   proposedContract: TrialEvaluationContract;
+  runbook?: RepoRunbook;
 };
 
 type StartExperimentInput = {
@@ -65,6 +76,7 @@ type DeleteExperimentInput = {
 
 const execFileAsync = promisify(execFileCallback);
 const evalSetupAgent = new CodexEvalSetupAgent();
+const runbookAgent = new CodexRunbookAgent();
 const experimentOrchestrator = new ExperimentOrchestrator();
 
 function errorMessage(error: unknown) {
@@ -236,6 +248,15 @@ function normalizeContract(
   };
 }
 
+async function resolveRunbook(repoPath: string, runbook?: RepoRunbook) {
+  if (runbook) {
+    return parseRepoRunbook(runbook);
+  }
+
+  const result = await runbookAgent.createRunbook(repoPath);
+  return result.runbook;
+}
+
 export async function saveExperiments(experiments: Experiment[]) {
   await writeExperiments(experiments);
 }
@@ -269,17 +290,19 @@ export async function deleteExperiment(
 
 export async function startEvalInterview(
   input: StartEvalInterviewInput,
-): Promise<ActionResult<EvalSetupAgentResult>> {
+): Promise<ActionResult<EvalSetupActionResult>> {
   try {
     const repoPath = await resolveLocalRepoPath(input.repoPath);
+    const runbook = await resolveRunbook(repoPath);
     const result = await evalSetupAgent.startInterview({
       experimentId: requiredString(input.experimentId, "experiment ID"),
       repoPath,
       title: requiredString(input.title, "experiment title"),
       objective: requiredString(input.objective, "experiment objective"),
+      runbook,
     });
 
-    return { ok: true, data: result };
+    return { ok: true, data: { ...result, runbook } };
   } catch (error) {
     return { ok: false, error: errorMessage(error) };
   }
@@ -287,17 +310,19 @@ export async function startEvalInterview(
 
 export async function sendEvalSetupReply(
   input: SendEvalSetupReplyInput,
-): Promise<ActionResult<EvalSetupAgentResult>> {
+): Promise<ActionResult<EvalSetupActionResult>> {
   try {
     const repoPath = await resolveLocalRepoPath(input.repoPath);
+    const runbook = await resolveRunbook(repoPath, input.runbook);
     const result = await evalSetupAgent.continueInterview({
       experimentId: requiredString(input.experimentId, "experiment ID"),
       evalSetupThreadId: requiredString(input.threadId, "eval setup thread ID"),
       repoPath,
       reply: requiredString(input.reply, "reply"),
+      runbook,
     });
 
-    return { ok: true, data: result };
+    return { ok: true, data: { ...result, runbook } };
   } catch (error) {
     return { ok: false, error: errorMessage(error) };
   }
@@ -305,14 +330,16 @@ export async function sendEvalSetupReply(
 
 export async function approveGeneratedEvaluation(
   input: ApproveGeneratedEvaluationInput,
-): Promise<ActionResult<EvalSetupAgentResult>> {
+): Promise<ActionResult<EvalSetupActionResult>> {
   try {
     const repoPath = await resolveLocalRepoPath(input.repoPath);
+    const runbook = await resolveRunbook(repoPath, input.runbook);
     const result = await evalSetupAgent.approveGenerated({
       experimentId: requiredString(input.experimentId, "experiment ID"),
       evalSetupThreadId: requiredString(input.threadId, "eval setup thread ID"),
       repoPath,
       proposedContract: normalizeContract(input.proposedContract),
+      runbook,
     });
 
     if (result.response.status !== "generated") {
@@ -325,7 +352,7 @@ export async function approveGeneratedEvaluation(
       result.response.scriptContent,
     );
 
-    return { ok: true, data: result };
+    return { ok: true, data: { ...result, runbook } };
   } catch (error) {
     return { ok: false, error: errorMessage(error) };
   }

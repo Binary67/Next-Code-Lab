@@ -2,6 +2,7 @@ import type { CodexTrialAgent } from "@/lib/codex/trial-agent";
 import type {
   TrialAgentResponse,
   TrialEvaluationContract,
+  RepoRunbook,
 } from "@/lib/codex/types";
 import type { Experiment, ExperimentTrial } from "@/lib/experiments";
 import { appendTrialLog, createTrialLog } from "@/lib/trial-log-store";
@@ -24,6 +25,7 @@ type RunTrialInput = {
   baselineScore: number;
   trialNumber: number;
   evalBudget: number;
+  runbook?: RepoRunbook;
 };
 
 type TrialAgent = Pick<CodexTrialAgent, "startTrial" | "continueTrial">;
@@ -113,6 +115,7 @@ export async function runTrial(input: RunTrialInput, trialAgent: TrialAgent) {
         baselineScore,
         evalBudget,
         trialNumber,
+        runbook: input.runbook,
       },
       {
         turnNumber: 1,
@@ -184,6 +187,7 @@ export async function runTrial(input: RunTrialInput, trialAgent: TrialAgent) {
         contract,
         worktree.evalPath,
         input.repoRoot,
+        input.runbook,
       );
       const improved = isScoreImproved(
         score,

@@ -6,6 +6,7 @@ import {
 } from "@/lib/experiments";
 import type {
   EvalSetupResponse,
+  RepoRunbook,
   TrialEvaluationContract,
 } from "@/lib/codex/types";
 import {
@@ -160,6 +161,7 @@ export function applyEvalSetupStarted(
   experiment: Experiment,
   evalSetupThreadId: string,
   response: EvalSetupResponse,
+  runbook: RepoRunbook,
 ): Experiment {
   const proposedContract =
     response.status === "ready" ? response.proposedContract : undefined;
@@ -181,6 +183,7 @@ export function applyEvalSetupStarted(
 
   return {
     ...experiment,
+    runbook,
     evaluation: nextEvaluation,
     metrics: refreshEvaluationMetrics(experiment.metrics, nextEvaluation),
   };
@@ -190,6 +193,7 @@ export function applyEvalSetupReply(
   experiment: Experiment,
   text: string,
   response: EvalSetupResponse,
+  runbook: RepoRunbook,
 ): Experiment {
   const proposedContract =
     response.status === "ready" ? response.proposedContract : undefined;
@@ -216,6 +220,7 @@ export function applyEvalSetupReply(
 
   return {
     ...experiment,
+    runbook,
     evaluation: nextEvaluation,
     metrics: refreshEvaluationMetrics(experiment.metrics, nextEvaluation),
   };
@@ -225,6 +230,7 @@ export function applyGeneratedEvaluationApproval(
   experiment: Experiment,
   response: EvalSetupResponse,
   contract: TrialEvaluationContract,
+  runbook: RepoRunbook,
 ): Experiment {
   const nextEvaluation = normalizeEvaluation({
     ...experiment.evaluation,
@@ -243,6 +249,7 @@ export function applyGeneratedEvaluationApproval(
 
   return {
     ...experiment,
+    runbook,
     evaluation: nextEvaluation,
     metricValue:
       experiment.status === "setup"

@@ -5,6 +5,42 @@ export type TrialEvaluationContract = {
   scoreName: string;
 };
 
+export type RepoRunbook = {
+  summary: string;
+  projectTypes: string[];
+  dependencyManagers: Array<{
+    ecosystem: string;
+    manager: string;
+    manifestFiles: string[];
+    lockFiles: string[];
+    setupCommands: string[];
+    runPrefix?: string;
+    evidence: string[];
+  }>;
+  runtimeRequirements: Array<{
+    name: string;
+    version?: string;
+    source: string;
+  }>;
+  workflows: Array<{
+    name: string;
+    purpose: string;
+    commands: string[];
+    requiredEnvVars: string[];
+    requiredFiles: string[];
+    produces: string[];
+    confidence: "high" | "medium" | "low";
+    evidence: string[];
+  }>;
+  repoConventions: string[];
+  knownRisks: string[];
+  openQuestions: string[];
+};
+
+export type RunbookAgentResult = {
+  runbook: RepoRunbook;
+};
+
 export type TokenUsage = {
   inputTokens: number;
   cachedInputTokens: number;
@@ -47,6 +83,7 @@ export type StartEvalSetupInput = {
   repoPath: string;
   title: string;
   objective: string;
+  runbook?: RepoRunbook;
 };
 
 export type ContinueEvalSetupInput = {
@@ -54,6 +91,7 @@ export type ContinueEvalSetupInput = {
   evalSetupThreadId: string;
   repoPath: string;
   reply: string;
+  runbook?: RepoRunbook;
 };
 
 export type ApproveEvalSetupInput = {
@@ -61,6 +99,7 @@ export type ApproveEvalSetupInput = {
   evalSetupThreadId: string;
   repoPath: string;
   proposedContract: TrialEvaluationContract;
+  runbook?: RepoRunbook;
 };
 
 export type StartTrialInput = {
@@ -71,6 +110,7 @@ export type StartTrialInput = {
   baselineScore: number;
   evalBudget: number;
   trialNumber: number;
+  runbook?: RepoRunbook;
 };
 
 export type ContinueTrialInput = {

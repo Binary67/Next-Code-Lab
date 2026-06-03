@@ -9,6 +9,7 @@ import type {
   TrialEvaluationContract,
 } from "./types";
 import { createCodexClient } from "./client";
+import { formatRunbookForPrompt } from "./runbook-agent";
 
 const interviewThreadOptions = {
   sandboxMode: "read-only",
@@ -182,6 +183,23 @@ function parseEvalSetupResponse(finalResponse: string): EvalSetupResponse {
   throw new Error("Codex returned an unknown eval setup status.");
 }
 
+function runbookSection(runbook: StartEvalSetupInput["runbook"]) {
+  if (!runbook) {
+    return [
+      "Public repo runbook: not available.",
+      "Infer execution details from repository files, and prefer project-local runners over system runtimes when evidence supports them.",
+    ].join("\n");
+  }
+
+  return [
+    "Public repo runbook:",
+    formatRunbookForPrompt(runbook),
+    "",
+    "Use this runbook for repository setup and execution mechanics.",
+    "When generated eval code runs candidate repository code, prefer the runbook's setup commands, run prefixes, workflows, and runtime requirements over generic system commands.",
+  ].join("\n");
+}
+
 function startInstruction(input: StartEvalSetupInput) {
   const generatedScriptPath = `.local/evals/${input.experimentId}/eval.mjs`;
 
@@ -189,6 +207,8 @@ function startInstruction(input: StartEvalSetupInput) {
     "You are setting up an evaluation script for an optimization experiment.",
     `Experiment title: ${input.title}`,
     `Experiment objective: ${input.objective}`,
+    "",
+    runbookSection(input.runbook),
     "",
     "The target repository is your working directory.",
     "Inspect the repository before deciding what information is missing. You may read files and run safe static inspection commands, but this interview turn must not write files.",
@@ -205,6 +225,7 @@ function startInstruction(input: StartEvalSetupInput) {
     `- For generated evals, propose run command: node ${generatedScriptPath}`,
     "- Generated eval scripts must read the candidate repository path from OPTIMIZER_TARGET_REPO.",
     "- Generated eval scripts may read ignored local assets from OPTIMIZER_BASE_REPO, the original target repository.",
+    "- Generated eval scripts must execute candidate repository code through the public runbook's project runner when one is available.",
     "",
     "Metric selection policy:",
     "- Treat a metric as selected only when the experiment title or objective explicitly names the metric or scoring signal to optimize.",
@@ -229,12 +250,15 @@ function continueInstruction(input: ContinueEvalSetupInput) {
     "",
     `User reply: ${input.reply}`,
     "",
+    runbookSection(input.runbook),
+    "",
     "Treat this reply as the user's selected metric if it names or selects a metric.",
     "Reinspect the repository if needed. Ask exactly one highest-value clarifying question only if the metric is still unclear or the eval contract still cannot be inferred. Include up to three suggested choices when useful.",
     "If the user selected the metric and enough information is available, return status ready with a proposed eval contract.",
     `For generated evals, use script path ${generatedScriptPath} and run command node ${generatedScriptPath}.`,
     "Generated eval scripts must read the candidate repository path from OPTIMIZER_TARGET_REPO.",
     "Generated eval scripts may read ignored local assets from OPTIMIZER_BASE_REPO, the original target repository.",
+    "Generated eval scripts must execute candidate repository code through the public runbook's project runner when one is available.",
     "Do not write files and do not return status generated during this interview turn.",
     "For fields that do not apply to the selected status, return null.",
   ].join("\n");
@@ -251,10 +275,13 @@ function approveInstruction(input: ApproveEvalSetupInput) {
     `Score name: ${contract.scoreName}`,
     `Score direction: ${contract.scoreDirection}`,
     "",
+    runbookSection(input.runbook),
+    "",
     "Do not write files. Return the complete eval script as scriptContent.",
     "The orchestrator will store this script in its own .local directory, outside the target repository.",
     "The script must read candidate code from OPTIMIZER_TARGET_REPO, which points to the eval worktree at the candidate snapshot.",
     "The script may read ignored local assets such as data/, .venv, caches, fixtures, or local credentials from OPTIMIZER_BASE_REPO, which points to the original target repository.",
+    "When the script executes candidate repository code, use the public runbook's setup assumptions and run prefix instead of generic system runtimes when available.",
     "The script must print one numeric score to stdout and exit 0 on successful evaluation.",
     "Return status generated with the final contract and scriptContent.",
     "For fields that do not apply to the selected status, return null.",

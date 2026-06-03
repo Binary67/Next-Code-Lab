@@ -67,7 +67,12 @@ export class ExperimentOrchestrator {
         experiment.id,
         baseCommit,
       );
-      baselineScore = await runEvaluation(contract, baselineWorktree, repoRoot);
+      baselineScore = await runEvaluation(
+        contract,
+        baselineWorktree,
+        repoRoot,
+        experiment.runbook,
+      );
     } catch (error) {
       const failed = buildBaselineFailedExperiment(
         experiment,
@@ -100,6 +105,7 @@ export class ExperimentOrchestrator {
           baselineScore,
           trialNumber: index,
           evalBudget: evalBudgetPerTrial,
+          runbook: experiment.runbook,
         },
         this.trialAgent,
       );
