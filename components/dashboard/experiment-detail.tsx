@@ -431,15 +431,7 @@ export function ExperimentDetail({
           onChange={setDetailTab}
         />
 
-        <div
-          className={`flex min-h-0 flex-1 flex-col bg-zinc-100/70 px-5 py-4 md:px-6 ${
-            detailTab === "evaluation"
-              ? "overflow-hidden"
-              : detailTab === "run"
-                ? "overflow-y-auto scrollbar-hidden xl:overflow-hidden"
-              : "overflow-y-auto scrollbar-hidden"
-          }`}
-        >
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-zinc-100/70 px-5 py-4 md:px-6">
           {detailTab !== "collab" && (
             <PendingInputBanner
               experiment={experiment}

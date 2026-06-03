@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type {
   Experiment,
   ExperimentMetric,
@@ -9,8 +10,16 @@ import {
   ComingSoonPanel,
   EmptyState,
   TRIAL_TONE,
+  WorkflowPageLayout,
   statusLabel,
 } from "./shared";
+import type { WorkflowPageItem } from "./shared";
+
+type OverviewPageId =
+  | "overview"
+  | "active-run"
+  | "measurements"
+  | "metrics-controls";
 
 function MetricsList({ metrics }: { metrics: ExperimentMetric[] }) {
   return (
@@ -96,7 +105,7 @@ function TrendChart({
       viewBox={`0 0 ${width} ${height}`}
       role="img"
       aria-label="Optimization trend by trial"
-      className="mt-4 aspect-[16/7] max-h-[280px] w-full overflow-visible"
+      className="mt-4 aspect-[16/7] max-h-[360px] w-full overflow-visible"
     >
       {[0, 1, 2, 3].map((tick) => {
         const y = padding.top + (ySpan / 3) * tick;
@@ -206,6 +215,17 @@ export function OverviewPanel({
   metricName: string;
   onNotify: (message: string) => void;
 }) {
+  const [pageSelection, setPageSelection] = useState<{
+    experimentId: string;
+    page: OverviewPageId;
+  }>(() => ({
+    experimentId: experiment.id,
+    page: "overview",
+  }));
+  const activePage =
+    pageSelection.experimentId === experiment.id
+      ? pageSelection.page
+      : "overview";
   const latestPoint: TrendPoint | undefined =
     experiment.trend[experiment.trend.length - 1];
   const previousPoint: TrendPoint | undefined =
@@ -216,122 +236,156 @@ export function OverviewPanel({
   const displayedMovement = Math.abs(movement) < 0.00005 ? 0 : movement;
   const activeTrial: ExperimentTrial | undefined = experiment.trials[0];
   const hasTrend = experiment.trend.length > 0;
+  const pages: WorkflowPageItem[] = [
+    {
+      id: "overview",
+      label: "Overview",
+      detail: hasTrend ? "Trend chart" : "Waiting for trials",
+    },
+    {
+      id: "active-run",
+      label: "Active Run",
+      detail: activeTrial?.id ?? "No trial",
+    },
+    {
+      id: "measurements",
+      label: "Measurements",
+      detail: activeTrial?.metricValue ?? "No score",
+    },
+    {
+      id: "metrics-controls",
+      label: "Metrics & Controls",
+      detail: `${experiment.metrics.length} metrics`,
+    },
+  ];
 
-  return (
-    <section className="grid gap-5 xl:grid-cols-[1.45fr_0.85fr]">
-      <div className="space-y-5">
-        <section className="rounded-2xl bg-zinc-50/70 p-4 ring-1 ring-zinc-950/5">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h2 className="text-base font-semibold tracking-tight text-zinc-900">
-                Overview
-              </h2>
-              <p className="mt-1 text-sm text-zinc-500">
-                Trend direction and latest trial state.
+  const setOverviewPage = (page: OverviewPageId) => {
+    setPageSelection({ experimentId: experiment.id, page });
+  };
+
+  const overviewPage = (
+    <div className="h-full overflow-y-auto bg-white p-4 scrollbar-hidden">
+      <section className="rounded-2xl bg-zinc-50/70 p-4 ring-1 ring-zinc-950/5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold tracking-tight text-zinc-900">
+              Overview
+            </h2>
+            <p className="mt-1 text-sm text-zinc-500">
+              Trend direction and latest trial state.
+            </p>
+          </div>
+          {hasTrend && (
+            <div className="rounded-2xl bg-blue-50/80 px-3 py-2 text-right ring-1 ring-blue-100">
+              <p className="text-xs font-medium text-blue-700">
+                Current{" "}
+                {latestPoint
+                  ? formatTrendValue(latestPoint.value, movementUnit)
+                  : experiment.metricValue}
+              </p>
+              <p
+                className={`mt-0.5 text-xs ${
+                  displayedMovement > 0 ? "text-amber-600" : "text-emerald-600"
+                }`}
+              >
+                {displayedMovement > 0 ? "+" : ""}
+                {formatTrendValue(displayedMovement, movementUnit)} from previous
               </p>
             </div>
-            {hasTrend && (
-              <div className="rounded-2xl bg-blue-50/80 px-3 py-2 text-right ring-1 ring-blue-100">
-                <p className="text-xs font-medium text-blue-700">
-                  Current{" "}
-                  {latestPoint
-                    ? formatTrendValue(latestPoint.value, movementUnit)
-                    : experiment.metricValue}
-                </p>
-                <p
-                  className={`mt-0.5 text-xs ${
-                    displayedMovement > 0 ? "text-amber-600" : "text-emerald-600"
-                  }`}
-                >
-                  {displayedMovement > 0 ? "+" : ""}
-                  {formatTrendValue(displayedMovement, movementUnit)} from previous
-                </p>
-              </div>
-            )}
-          </div>
-          {hasTrend ? (
-            <TrendChart
-              points={experiment.trend}
-              target={experiment.targetMetric}
-              targetLabel={`${experiment.targetLabel}: ${experiment.targetValue}`}
-              unit={movementUnit}
-            />
-          ) : (
-            <div className="mt-4">
-              <EmptyState title="Trend appears after the first trial completes." />
-            </div>
           )}
-        </section>
-
-        <div className="grid gap-3 lg:grid-cols-2">
-          <section className="rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
-            <h3 className="text-sm font-semibold text-zinc-900">Active run</h3>
-            {activeTrial ? (
-              <>
-                <div className="mt-3 flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="font-mono text-xs font-semibold text-zinc-900">
-                      {activeTrial.id}
-                    </p>
-                    <p className="mt-1 truncate text-sm font-medium text-zinc-900">
-                      {activeTrial.title}
-                    </p>
-                  </div>
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ring-1 ring-inset ring-black/5 ${
-                      TRIAL_TONE[activeTrial.status]
-                    }`}
-                  >
-                    {statusLabel(activeTrial.status)}
-                  </span>
-                </div>
-                <p className="mt-3 text-sm leading-relaxed text-zinc-500">
-                  {activeTrial.summary}
-                </p>
-              </>
-            ) : (
-              <div className="mt-3">
-                <EmptyState
-                  title="No active run yet."
-                  body="Start the experiment after evaluation setup to create the first trial."
-                />
-              </div>
-            )}
-          </section>
-
-          <section className="rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
-            <h3 className="text-sm font-semibold text-zinc-900">Measurement</h3>
-            {activeTrial ? (
-              <div className="mt-3 divide-y divide-zinc-200/70 text-sm">
-                <div className="flex items-center justify-between gap-3 py-2 first:pt-0">
-                  <span className="text-zinc-500">{metricName}</span>
-                  <span className="font-semibold text-zinc-900">
-                    {activeTrial.metricValue}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-3 py-2">
-                  <span className="text-zinc-500">{experiment.targetLabel}</span>
-                  <span className="font-semibold text-zinc-900">
-                    {experiment.targetValue}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-3 py-2 last:pb-0">
-                  <span className="text-zinc-500">Duration</span>
-                  <span className="font-semibold text-zinc-900">
-                    {activeTrial.duration}
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-3">
-                <EmptyState title="Measurements will appear after a trial records a score." />
-              </div>
-            )}
-          </section>
         </div>
-      </div>
+        {hasTrend ? (
+          <TrendChart
+            points={experiment.trend}
+            target={experiment.targetMetric}
+            targetLabel={`${experiment.targetLabel}: ${experiment.targetValue}`}
+            unit={movementUnit}
+          />
+        ) : (
+          <div className="mt-4">
+            <EmptyState title="Trend appears after the first trial completes." />
+          </div>
+        )}
+      </section>
+    </div>
+  );
 
-      <aside className="space-y-5">
+  const activeRunPage = (
+    <div className="h-full overflow-y-auto bg-white p-4 scrollbar-hidden">
+      <section className="rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
+        <h3 className="text-sm font-semibold text-zinc-900">Active run</h3>
+        {activeTrial ? (
+          <>
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-mono text-xs font-semibold text-zinc-900">
+                  {activeTrial.id}
+                </p>
+                <p className="mt-1 truncate text-sm font-medium text-zinc-900">
+                  {activeTrial.title}
+                </p>
+              </div>
+              <span
+                className={`rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ring-1 ring-inset ring-black/5 ${
+                  TRIAL_TONE[activeTrial.status]
+                }`}
+              >
+                {statusLabel(activeTrial.status)}
+              </span>
+            </div>
+            <p className="mt-3 text-sm leading-relaxed text-zinc-500">
+              {activeTrial.summary}
+            </p>
+          </>
+        ) : (
+          <div className="mt-3">
+            <EmptyState
+              title="No active run yet."
+              body="Start the experiment after evaluation setup to create the first trial."
+            />
+          </div>
+        )}
+      </section>
+    </div>
+  );
+
+  const measurementsPage = (
+    <div className="h-full overflow-y-auto bg-white p-4 scrollbar-hidden">
+      <section className="rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
+        <h3 className="text-sm font-semibold text-zinc-900">Measurement</h3>
+        {activeTrial ? (
+          <div className="mt-3 divide-y divide-zinc-200/70 text-sm">
+            <div className="flex items-center justify-between gap-3 py-2 first:pt-0">
+              <span className="text-zinc-500">{metricName}</span>
+              <span className="font-semibold text-zinc-900">
+                {activeTrial.metricValue}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3 py-2">
+              <span className="text-zinc-500">{experiment.targetLabel}</span>
+              <span className="font-semibold text-zinc-900">
+                {experiment.targetValue}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3 py-2 last:pb-0">
+              <span className="text-zinc-500">Duration</span>
+              <span className="font-semibold text-zinc-900">
+                {activeTrial.duration}
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-3">
+            <EmptyState title="Measurements will appear after a trial records a score." />
+          </div>
+        )}
+      </section>
+    </div>
+  );
+
+  const metricsControlsPage = (
+    <div className="h-full overflow-y-auto bg-white p-4 scrollbar-hidden">
+      <div className="grid gap-5 xl:grid-cols-[0.8fr_1.2fr]">
         <section className="rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
           <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
             Run controls
@@ -358,8 +412,28 @@ export function OverviewPanel({
 
         <MetricsList metrics={experiment.metrics} />
 
-        <ComingSoonPanel title="Guardrails and spend" />
-      </aside>
-    </section>
+        <div className="xl:col-span-2">
+          <ComingSoonPanel title="Guardrails and spend" />
+        </div>
+      </div>
+    </div>
+  );
+
+  const activeContent = (() => {
+    if (activePage === "active-run") return activeRunPage;
+    if (activePage === "measurements") return measurementsPage;
+    if (activePage === "metrics-controls") return metricsControlsPage;
+    return overviewPage;
+  })();
+
+  return (
+    <WorkflowPageLayout
+      pages={pages}
+      activePage={activePage}
+      onPageChange={(pageId) => setOverviewPage(pageId as OverviewPageId)}
+      ariaLabel="Overview pages"
+    >
+      {activeContent}
+    </WorkflowPageLayout>
   );
 }

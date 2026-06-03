@@ -4,6 +4,7 @@ import type {
   ProgressStep,
   Status,
 } from "@/lib/experiments";
+import type { ReactNode } from "react";
 
 export const inputClass =
   "w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-900 outline-none transition-colors placeholder:text-zinc-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100";
@@ -77,6 +78,74 @@ export function ComingSoonPanel({ title }: { title: string }) {
           Coming soon
         </span>
       </div>
+    </section>
+  );
+}
+
+export type WorkflowPageItem = {
+  id: string;
+  label: string;
+  detail?: string;
+  badge?: ReactNode;
+};
+
+export function WorkflowPageLayout({
+  pages,
+  activePage,
+  onPageChange,
+  children,
+  ariaLabel = "Workflow pages",
+}: {
+  pages: WorkflowPageItem[];
+  activePage: string;
+  onPageChange: (pageId: string) => void;
+  children: ReactNode;
+  ariaLabel?: string;
+}) {
+  return (
+    <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl bg-white/75 ring-1 ring-zinc-200/80 md:flex-row">
+      <aside className="shrink-0 border-b border-zinc-200/80 bg-zinc-50/80 px-3 py-3 md:h-full md:w-64 md:border-b-0 md:border-r md:overflow-y-auto">
+        <nav
+          aria-label={ariaLabel}
+          className="flex gap-2 overflow-x-auto scrollbar-hidden md:flex-col md:overflow-visible"
+        >
+          {pages.map((page) => {
+            const selected = page.id === activePage;
+
+            return (
+              <button
+                key={page.id}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => onPageChange(page.id)}
+                className={`min-w-44 rounded-xl border px-3 py-2.5 text-left transition-colors md:min-w-0 ${
+                  selected
+                    ? "border-blue-200 bg-blue-50 text-blue-700"
+                    : "border-transparent bg-white/65 text-zinc-600 hover:bg-white hover:text-zinc-900"
+                }`}
+              >
+                <span className="flex items-center justify-between gap-2">
+                  <span className="truncate text-sm font-semibold">
+                    {page.label}
+                  </span>
+                  {page.badge}
+                </span>
+                {page.detail && (
+                  <span
+                    className={`mt-0.5 block truncate text-xs ${
+                      selected ? "text-blue-600" : "text-zinc-400"
+                    }`}
+                  >
+                    {page.detail}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
+      </aside>
+
+      <div className="min-h-0 flex-1 overflow-hidden bg-white">{children}</div>
     </section>
   );
 }

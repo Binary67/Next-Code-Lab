@@ -12,19 +12,11 @@ import {
 import {
   EmptyState,
   TRIAL_TONE,
+  WorkflowPageLayout,
   inputClass,
   statusLabel,
 } from "./shared";
-
-function evalProgressLabel(trial: ExperimentTrial, evalBudgetPerTrial: number) {
-  if (trial.evalsUsed === undefined) {
-    return undefined;
-  }
-
-  return `${trial.evalsUsed} of ${evalBudgetPerTrial} ${
-    evalBudgetPerTrial === 1 ? "eval" : "evals"
-  }`;
-}
+import type { WorkflowPageItem } from "./shared";
 
 type TrialDiff = {
   trialId: string;
@@ -49,6 +41,8 @@ type TrialLogState =
       updatedAt?: string;
     }
   | { status: "error"; trialId: string; message: string };
+
+type AgentCollabPageId = "conversation" | "pending-input";
 
 function formatScoreValue(value: number) {
   return Number.isInteger(value)
@@ -95,18 +89,6 @@ function getTrialDelta(
     value: `${sign}${formatScoreValue(Math.abs(delta))}`,
     raw: delta,
   };
-}
-
-function deltaTone(
-  delta: number,
-  direction: Experiment["evaluation"]["scoreDirection"],
-) {
-  if (!direction || delta === 0) {
-    return "text-zinc-500";
-  }
-
-  const improved = direction === "maximize" ? delta > 0 : delta < 0;
-  return improved ? "text-emerald-700" : "text-rose-700";
 }
 
 function diffLineClass(line: string) {
@@ -183,7 +165,7 @@ function DiffContent({ state }: { state: TrialDiffState }) {
   }
 
   return (
-    <div className="mt-5 max-h-[32rem] overflow-auto rounded-xl bg-white text-xs ring-1 ring-zinc-950/10">
+    <div className="mt-5 min-h-0 flex-1 overflow-auto rounded-xl bg-white text-xs ring-1 ring-zinc-950/10">
       <pre className="min-w-max py-2 font-mono leading-5">
         {lines.map((line, index) => (
           <div key={`${state.data.targetRef}-${index}`} className={`px-4 ${diffLineClass(line)}`}>
@@ -325,88 +307,44 @@ export function RunPanel({
       element.scrollHeight - element.scrollTop - element.clientHeight;
     shouldStickToBottomRef.current = distanceFromBottom < 48;
   };
+  const pages: WorkflowPageItem[] =
+    experiment.trials.length === 0
+      ? [
+          {
+            id: "no-trials",
+            label: "Trial history",
+            detail: "No trials yet",
+          },
+        ]
+      : experiment.trials.map((trial) => ({
+          id: trial.id,
+          label: trial.id,
+          detail: trial.title,
+          badge: (
+            <span
+              className={`rounded-full px-1.5 text-[11px] font-medium capitalize ring-1 ring-inset ring-black/5 ${
+                TRIAL_TONE[trial.status]
+              }`}
+            >
+              {statusLabel(trial.status)}
+            </span>
+          ),
+        }));
 
   return (
-    <section className="grid min-h-[34rem] gap-5 xl:h-full xl:min-h-0 xl:grid-cols-[22rem_minmax(0,1fr)] xl:overflow-hidden">
-      <section className="flex min-h-0 flex-col rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
-        <h2 className="text-base font-semibold tracking-tight text-zinc-900">
-          Trial history
-        </h2>
-        <p className="mt-1 text-sm text-zinc-500">
-          Select one trial to inspect its live execution log.
-        </p>
-
-        {experiment.trials.length === 0 ? (
-          <div className="mt-5">
-            <EmptyState
-              title="No trials yet."
-              body="Start the experiment after evaluation setup to create the first trial."
-            />
-          </div>
-        ) : (
-          <div className="mt-5 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
-            {experiment.trials.map((trial) => {
-              const selected = selectedTrial?.id === trial.id;
-              const evalProgress = evalProgressLabel(
-                trial,
-                experiment.evalBudgetPerTrial,
-              );
-
-              return (
-                <button
-                  key={trial.id}
-                  type="button"
-                  aria-pressed={selected}
-                  onClick={() =>
-                    setManualSelection({
-                      experimentId: experiment.id,
-                      trialId: trial.id,
-                    })
-                  }
-                  className={`w-full rounded-xl border px-3 py-3 text-left transition-colors ${
-                    selected
-                      ? "border-blue-200 bg-blue-50/70"
-                      : "border-zinc-200/70 bg-white/60 hover:bg-zinc-50"
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-mono text-xs font-semibold text-zinc-900">
-                          {trial.id}
-                        </p>
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ring-1 ring-inset ring-black/5 ${
-                            TRIAL_TONE[trial.status]
-                          }`}
-                        >
-                          {statusLabel(trial.status)}
-                        </span>
-                      </div>
-                      <h3 className="mt-2 truncate text-sm font-medium text-zinc-900">
-                        {trial.title}
-                      </h3>
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <p className="text-[11px] text-zinc-400">{metricName}</p>
-                      <p className="mt-0.5 text-sm font-semibold text-zinc-900">
-                        {trial.metricValue}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-zinc-400">
-                    <span>{trial.duration}</span>
-                    {evalProgress && <span>{evalProgress}</span>}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-      <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
+    <WorkflowPageLayout
+      pages={pages}
+      activePage={selectedTrialId ?? "no-trials"}
+      onPageChange={(pageId) => {
+        if (pageId === "no-trials") return;
+        setManualSelection({
+          experimentId: experiment.id,
+          trialId: pageId,
+        });
+      }}
+      ariaLabel="Run trials"
+    >
+      <section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-white p-4">
         {selectedTrial ? (
           <>
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -493,7 +431,7 @@ export function RunPanel({
           />
         )}
       </section>
-    </section>
+    </WorkflowPageLayout>
   );
 }
 
@@ -627,101 +565,60 @@ export function ChangesPanel({ experiment }: { experiment: Experiment }) {
     selectedDiffKey,
     selectedTrialTarget,
   ]);
+  const pages: WorkflowPageItem[] =
+    experiment.trials.length === 0
+      ? [
+          {
+            id: "no-trials",
+            label: "Trial changes",
+            detail: "No trials yet",
+          },
+        ]
+      : experiment.trials.map((trial) => {
+          const delta = getTrialDelta(trial, experiment.baselineScore);
+          const detail = [
+            trial.metricValue,
+            trial.duration,
+            delta?.value,
+          ].filter(Boolean);
 
-  return (
-    <section className="grid gap-5 xl:grid-cols-[22rem_minmax(0,1fr)]">
-      <section className="rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
-        <h2 className="text-base font-semibold tracking-tight text-zinc-900">
-          Trial changes
-        </h2>
-        <p className="mt-1 text-sm text-zinc-500">
-          Select one trial to review its code diff.
-        </p>
-
-        {experiment.trials.length === 0 ? (
-          <div className="mt-5">
-            <EmptyState title="No trials yet." />
-          </div>
-        ) : (
-          <div className="mt-5 space-y-2">
-            {experiment.trials.map((trial) => {
-              const selected = selectedTrial?.id === trial.id;
-              const evalProgress = evalProgressLabel(
-                trial,
-                experiment.evalBudgetPerTrial,
-              );
-              const delta = getTrialDelta(trial, experiment.baselineScore);
-
-              return (
-                <button
-                  key={trial.id}
-                  type="button"
-                  aria-pressed={selected}
-                  onClick={() =>
-                    setManualSelection({
-                      experimentId: experiment.id,
-                      trialId: trial.id,
-                    })
-                  }
-                  className={`w-full rounded-xl border px-3 py-3 text-left transition-colors ${
-                    selected
-                      ? "border-blue-200 bg-blue-50/70"
-                      : "border-zinc-200/70 bg-white/60 hover:bg-zinc-50"
+          return {
+            id: trial.id,
+            label: trial.id,
+            detail: detail.join(" | "),
+            badge: (
+              <span className="flex shrink-0 items-center gap-1">
+                {bestTrial?.id === trial.id && (
+                  <span className="rounded-full bg-emerald-50 px-1.5 text-[11px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200/70">
+                    Best
+                  </span>
+                )}
+                <span
+                  className={`rounded-full px-1.5 text-[11px] font-medium capitalize ring-1 ring-inset ring-black/5 ${
+                    TRIAL_TONE[trial.status]
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-mono text-xs font-semibold text-zinc-900">
-                          {trial.id}
-                        </p>
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ring-1 ring-inset ring-black/5 ${
-                            TRIAL_TONE[trial.status]
-                          }`}
-                        >
-                          {statusLabel(trial.status)}
-                        </span>
-                        {bestTrial?.id === trial.id && (
-                          <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200/70">
-                            Best
-                          </span>
-                        )}
-                      </div>
-                      <h3 className="mt-2 truncate text-sm font-medium text-zinc-900">
-                        {trial.title}
-                      </h3>
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <p className="text-[11px] text-zinc-400">{scoreName}</p>
-                      <p className="mt-0.5 text-sm font-semibold text-zinc-900">
-                        {trial.metricValue}
-                      </p>
-                    </div>
-                  </div>
+                  {statusLabel(trial.status)}
+                </span>
+              </span>
+            ),
+          };
+        });
 
-                  <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-zinc-400">
-                    <span>{trial.duration}</span>
-                    {evalProgress && <span>{evalProgress}</span>}
-                    {delta && (
-                      <span
-                        className={deltaTone(
-                          delta.raw,
-                          experiment.evaluation.scoreDirection,
-                        )}
-                      >
-                        {delta.value}
-                      </span>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-      <section className="min-w-0 rounded-2xl bg-white/65 p-4 ring-1 ring-zinc-950/5">
+  return (
+    <WorkflowPageLayout
+      pages={pages}
+      activePage={selectedTrialId ?? "no-trials"}
+      onPageChange={(pageId) => {
+        if (pageId === "no-trials") return;
+        setManualSelection({
+          experimentId: experiment.id,
+          trialId: pageId,
+        });
+      }}
+      ariaLabel="Change trials"
+    >
+      <section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-white p-4">
         {selectedTrial ? (
           <>
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -779,7 +676,7 @@ export function ChangesPanel({ experiment }: { experiment: Experiment }) {
           />
         )}
       </section>
-    </section>
+    </WorkflowPageLayout>
   );
 }
 
@@ -793,7 +690,45 @@ export function AgentCollab({
   onSendReply: (experiment: Experiment, text: string) => void;
 }) {
   const [reply, setReply] = useState("");
+  const [pageSelection, setPageSelection] = useState<{
+    experimentId: string;
+    page: AgentCollabPageId;
+  }>(() => ({
+    experimentId: experiment.id,
+    page: "conversation",
+  }));
   const canReply = experiment.status !== "setup";
+  const hasPendingInput =
+    experiment.status === "needs-input" && Boolean(experiment.pendingQuestion);
+  const selectedPage =
+    pageSelection.experimentId === experiment.id
+      ? pageSelection.page
+      : "conversation";
+  const activePage =
+    selectedPage === "pending-input" && !hasPendingInput
+      ? "conversation"
+      : selectedPage;
+  const pages: WorkflowPageItem[] = [
+    {
+      id: "conversation",
+      label: "Conversation",
+      detail: `${experiment.agentMessages.length} messages`,
+    },
+    ...(hasPendingInput
+      ? [
+          {
+            id: "pending-input",
+            label: "Pending Input",
+            detail: "User input required",
+            badge: (
+              <span className="rounded-full bg-amber-100 px-1.5 text-[11px] font-medium text-amber-700">
+                Input
+              </span>
+            ),
+          },
+        ]
+      : []),
+  ];
 
   const addReply = (text: string) => {
     if (!canReply) return;
@@ -804,9 +739,12 @@ export function AgentCollab({
     onSendReply(experiment, trimmed);
     setReply("");
   };
+  const setAgentPage = (page: AgentCollabPageId) => {
+    setPageSelection({ experimentId: experiment.id, page });
+  };
 
-  return (
-    <section className="flex min-h-[520px] w-full flex-col overflow-hidden rounded-2xl bg-zinc-50/70 ring-1 ring-zinc-950/5">
+  const conversationPage = (
+    <section className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-zinc-50/70">
       <header className="border-b border-zinc-200/70 bg-white/55 px-5 py-4">
         <div className="flex items-center gap-2">
           <Avatar size={28} hue={205}>
@@ -819,8 +757,8 @@ export function AgentCollab({
         </div>
       </header>
 
-      <div className="flex-1 space-y-4 overflow-y-auto px-4 py-5 scrollbar-hidden">
-        {experiment.agentMessages.length === 0 && !experiment.pendingQuestion && (
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-5">
+        {experiment.agentMessages.length === 0 && (
           <EmptyState title="Runtime collaboration starts after the experiment starts." />
         )}
 
@@ -850,31 +788,6 @@ export function AgentCollab({
             </div>
           );
         })}
-
-        {experiment.pendingQuestion && experiment.status === "needs-input" && (
-          <div className="rounded-2xl bg-amber-50/80 p-4 ring-1 ring-amber-200/80">
-            <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-amber-700">
-              <WarningIcon className="h-3.5 w-3.5" />
-              {experiment.pendingQuestion.title}
-            </p>
-            <p className="mt-2 text-sm font-medium leading-relaxed text-zinc-900">
-              {experiment.pendingQuestion.body}
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {experiment.pendingQuestion.options.map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  onClick={() => onAnswer(experiment, option)}
-                  className="rounded-xl bg-white/80 px-3 py-1.5 text-sm font-medium text-zinc-700 ring-1 ring-zinc-950/5 transition-colors hover:bg-white hover:text-blue-700"
-                >
-                  {option}
-                </button>
-              ))}
-            </div>
-            <p className="mt-3 text-xs text-zinc-400">Just now</p>
-          </div>
-        )}
       </div>
 
       <form
@@ -916,5 +829,47 @@ export function AgentCollab({
         </div>
       </form>
     </section>
+  );
+
+  const pendingInputPage = (
+    <div className="h-full overflow-y-auto bg-white p-4 scrollbar-hidden">
+      {hasPendingInput && experiment.pendingQuestion ? (
+        <section className="rounded-2xl bg-amber-50/80 p-4 ring-1 ring-amber-200/80">
+          <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-amber-700">
+            <WarningIcon className="h-3.5 w-3.5" />
+            {experiment.pendingQuestion.title}
+          </p>
+          <p className="mt-2 text-sm font-medium leading-relaxed text-zinc-900">
+            {experiment.pendingQuestion.body}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {experiment.pendingQuestion.options.map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => onAnswer(experiment, option)}
+                className="rounded-xl bg-white/80 px-3 py-1.5 text-sm font-medium text-zinc-700 ring-1 ring-zinc-950/5 transition-colors hover:bg-white hover:text-blue-700"
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+          <p className="mt-3 text-xs text-zinc-400">Just now</p>
+        </section>
+      ) : (
+        <EmptyState title="No pending input." />
+      )}
+    </div>
+  );
+
+  return (
+    <WorkflowPageLayout
+      pages={pages}
+      activePage={activePage}
+      onPageChange={(pageId) => setAgentPage(pageId as AgentCollabPageId)}
+      ariaLabel="Agent collaboration pages"
+    >
+      {activePage === "pending-input" ? pendingInputPage : conversationPage}
+    </WorkflowPageLayout>
   );
 }
