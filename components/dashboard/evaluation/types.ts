@@ -9,7 +9,7 @@ export type EvaluationPageId =
   | "interview"
   | "contract"
   | "run-settings"
-  | "behavior";
+  | "runbook";
 
 export type EvaluationPanelProps = {
   experiment: Experiment;

@@ -50,9 +50,9 @@ export function getEvaluationPages({
       detail: `${experiment.trialCount} trials`,
     },
     {
-      id: "behavior",
-      label: "Contract Behavior",
-      detail: "Execution rules",
+      id: "runbook",
+      label: "Runbook",
+      detail: "Repo execution guide",
     },
   ];
 }

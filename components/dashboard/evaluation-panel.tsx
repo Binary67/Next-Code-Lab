@@ -4,10 +4,10 @@ import type {
   ExperimentEvaluation,
 } from "@/lib/experiments";
 import { WorkflowPageLayout } from "./shared";
-import { EvaluationBehaviorPage } from "./evaluation/evaluation-behavior-page";
 import { EvaluationContractPage } from "./evaluation/evaluation-contract-page";
 import { EvaluationInterviewPage } from "./evaluation/evaluation-interview-page";
 import { EvaluationRunSettingsPage } from "./evaluation/evaluation-run-settings-page";
+import { EvaluationRunbookPage } from "./evaluation/evaluation-runbook-page";
 import { EvaluationSetupPage } from "./evaluation/evaluation-setup-page";
 import {
   defaultEvaluationPage,
@@ -128,7 +128,7 @@ export function EvaluationPanel({
         onUpdateRunSetting={updateRunSetting}
       />
     ),
-    behavior: <EvaluationBehaviorPage />,
+    runbook: <EvaluationRunbookPage runbook={experiment.runbook} />,
   };
 
   return (
